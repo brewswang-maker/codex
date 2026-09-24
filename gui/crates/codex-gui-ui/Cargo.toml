@@ -1,0 +1,36 @@
+[package]
+name = "codex-gui-ui"
+description = "iced widgets, messages, and views for the Codex GUI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+codex-app-server-protocol = { path = "../../../codex-rs/app-server-protocol" }
+codex-gui-bridge = { workspace = true }
+codex-gui-core = { workspace = true }
+iced = { workspace = true }
+iced-swdir-tree = { workspace = true }
+rfd = { workspace = true }
+serde_json = "1"
+tracing = "0.1"
+
+[features]
+default = ["wgpu"]
+# GPU-less environments (CI containers, old VMs) build tiny-skia-only via
+# `--no-default-features`; the fallback renderer then resolves to just the
+# software backend (spec sections 7 and 10).
+wgpu = ["iced/wgpu"]
+
+[dev-dependencies]
+# Headless view-interaction simulator (spec section 10, UI layer row).
+iced_test = "0.14"
+tempfile = "3"
+# Snapshot coverage of the markdown streaming segmentation (spec section 10,
+# snapshot row).
+insta = "1"
+pretty_assertions = "1"
+
+[lints]
+workspace = true

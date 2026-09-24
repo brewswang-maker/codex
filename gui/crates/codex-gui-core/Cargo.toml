@@ -1,0 +1,18 @@
+[package]
+name = "codex-gui-core"
+description = "UI-agnostic conversation state for the Codex GUI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+codex-app-server-protocol = { path = "../../../codex-rs/app-server-protocol" }
+serde_json.workspace = true
+
+[dev-dependencies]
+pretty_assertions = "1"
+tempfile = "3"
+
+[lints]
+workspace = true

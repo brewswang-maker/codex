@@ -1,0 +1,56 @@
+# CI for the gui workspace (spec section 10, CI row): a three-platform
+# matrix (linux/macos/windows) plus a GPU-less tiny-skia-only job.
+#
+# The workspace lives at `gui/` inside the repo and path-depends on
+# `codex-rs/app-server-protocol`, so jobs check out the whole repo and run
+# with `gui` as the working directory.
+name: gui
+
+on:
+  push:
+    paths: ["gui/**"]
+  pull_request:
+    paths: ["gui/**"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Full renderer matrix: fmt, clippy, compile, and every test.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: gui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gui
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  # GPU-less container (spec sections 7/10 and R5): drop the `wgpu` feature
+  # so only the tiny-skia software renderer is compiled, then run the whole
+  # suite headlessly.
+  software-rendering:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gui
+      - run: cargo check --workspace --no-default-features
+      - run: cargo test --workspace --no-default-features

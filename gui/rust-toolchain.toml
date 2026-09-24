@@ -1,0 +1,6 @@
+# The GUI workspace pins its own toolchain: the rama proxy stack pulled in by
+# the codex-otel dependency chain requires rustc >= 1.96, which the main
+# repo's 1.95.0 pin (codex-rs/rust-toolchain.toml) does not provide.
+[toolchain]
+channel = "1.98.1"
+profile = "minimal"

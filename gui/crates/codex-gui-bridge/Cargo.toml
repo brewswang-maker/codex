@@ -1,0 +1,26 @@
+[package]
+name = "codex-gui-bridge"
+description = "stdio JSON-RPC bridge between the iced GUI and `codex app-server`"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+codex-app-server-protocol = { path = "../../../codex-rs/app-server-protocol" }
+serde = "1"
+serde_json = "1"
+thiserror = "2"
+tokio = { workspace = true }
+tracing = "0.1"
+
+[dev-dependencies]
+pretty_assertions = "1"
+tempfile = "3"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "codex-gui-mock-server"
+path = "src/bin/mock_server.rs"

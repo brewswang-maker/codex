@@ -1,0 +1,324 @@
+---
+source: crates/codex-gui-ui/src/chat/markdown_view_tests.rs
+assertion_line: 29
+expression: content.items()
+---
+[
+    Heading(
+        H1,
+        Text {
+            spans: [
+                Standard {
+                    text: "Title",
+                    strikethrough: false,
+                    link: None,
+                    strong: false,
+                    emphasis: false,
+                    code: false,
+                },
+            ],
+            last_style: Cell {
+                value: None,
+            },
+            last_styled_spans: RefCell {
+                value: [],
+            },
+        },
+    ),
+    Paragraph(
+        Text {
+            spans: [
+                Standard {
+                    text: "Some intro text with ",
+                    strikethrough: false,
+                    link: None,
+                    strong: false,
+                    emphasis: false,
+                    code: false,
+                },
+                Standard {
+                    text: "bold",
+                    strikethrough: false,
+                    link: None,
+                    strong: true,
+                    emphasis: false,
+                    code: false,
+                },
+                Standard {
+                    text: " and ",
+                    strikethrough: false,
+                    link: None,
+                    strong: false,
+                    emphasis: false,
+                    code: false,
+                },
+                Standard {
+                    text: "code",
+                    strikethrough: false,
+                    link: None,
+                    strong: false,
+                    emphasis: false,
+                    code: true,
+                },
+                Standard {
+                    text: ".",
+                    strikethrough: false,
+                    link: None,
+                    strong: false,
+                    emphasis: false,
+                    code: false,
+                },
+            ],
+            last_style: Cell {
+                value: None,
+            },
+            last_styled_spans: RefCell {
+                value: [],
+            },
+        },
+    ),
+    List {
+        start: None,
+        bullets: [
+            Point {
+                items: [
+                    Paragraph(
+                        Text {
+                            spans: [
+                                Standard {
+                                    text: "first bullet",
+                                    strikethrough: false,
+                                    link: None,
+                                    strong: false,
+                                    emphasis: false,
+                                    code: false,
+                                },
+                            ],
+                            last_style: Cell {
+                                value: None,
+                            },
+                            last_styled_spans: RefCell {
+                                value: [],
+                            },
+                        },
+                    ),
+                ],
+            },
+            Point {
+                items: [
+                    Paragraph(
+                        Text {
+                            spans: [
+                                Standard {
+                                    text: "second bullet",
+                                    strikethrough: false,
+                                    link: None,
+                                    strong: false,
+                                    emphasis: false,
+                                    code: false,
+                                },
+                            ],
+                            last_style: Cell {
+                                value: None,
+                            },
+                            last_styled_spans: RefCell {
+                                value: [],
+                            },
+                        },
+                    ),
+                ],
+            },
+        ],
+    },
+    CodeBlock {
+        language: Some(
+            "rust",
+        ),
+        code: "fn main() {\n    println!(\"hi\");\n}\n",
+        lines: [
+            Text {
+                spans: [
+                    Highlight {
+                        text: "fn",
+                        color: Some(
+                            Color {
+                                r: 0.7058824,
+                                g: 0.5568628,
+                                b: 0.6784314,
+                                a: 1.0,
+                            },
+                        ),
+                        font: None,
+                    },
+                    Highlight {
+                        text: " ",
+                        color: None,
+                        font: None,
+                    },
+                    Highlight {
+                        text: "main",
+                        color: Some(
+                            Color {
+                                r: 0.56078434,
+                                g: 0.6313726,
+                                b: 0.7019608,
+                                a: 1.0,
+                            },
+                        ),
+                        font: None,
+                    },
+                    Highlight {
+                        text: "(",
+                        color: None,
+                        font: None,
+                    },
+                    Highlight {
+                        text: ")",
+                        color: None,
+                        font: None,
+                    },
+                    Highlight {
+                        text: " ",
+                        color: None,
+                        font: None,
+                    },
+                    Highlight {
+                        text: "{",
+                        color: None,
+                        font: None,
+                    },
+                ],
+                last_style: Cell {
+                    value: None,
+                },
+                last_styled_spans: RefCell {
+                    value: [],
+                },
+            },
+            Text {
+                spans: [
+                    Highlight {
+                        text: "    ",
+                        color: None,
+                        font: None,
+                    },
+                    Highlight {
+                        text: "println!",
+                        color: None,
+                        font: None,
+                    },
+                    Highlight {
+                        text: "(",
+                        color: None,
+                        font: None,
+                    },
+                    Highlight {
+                        text: "\"",
+                        color: Some(
+                            Color {
+                                r: 0.7529412,
+                                g: 0.77254903,
+                                b: 0.80784315,
+                                a: 1.0,
+                            },
+                        ),
+                        font: None,
+                    },
+                    Highlight {
+                        text: "hi",
+                        color: Some(
+                            Color {
+                                r: 0.6392157,
+                                g: 0.74509805,
+                                b: 0.54901963,
+                                a: 1.0,
+                            },
+                        ),
+                        font: None,
+                    },
+                    Highlight {
+                        text: "\"",
+                        color: Some(
+                            Color {
+                                r: 0.7529412,
+                                g: 0.77254903,
+                                b: 0.80784315,
+                                a: 1.0,
+                            },
+                        ),
+                        font: None,
+                    },
+                    Highlight {
+                        text: ")",
+                        color: None,
+                        font: None,
+                    },
+                    Highlight {
+                        text: ";",
+                        color: None,
+                        font: None,
+                    },
+                ],
+                last_style: Cell {
+                    value: None,
+                },
+                last_styled_spans: RefCell {
+                    value: [],
+                },
+            },
+            Text {
+                spans: [
+                    Highlight {
+                        text: "}",
+                        color: None,
+                        font: None,
+                    },
+                ],
+                last_style: Cell {
+                    value: None,
+                },
+                last_styled_spans: RefCell {
+                    value: [],
+                },
+            },
+        ],
+    },
+    Paragraph(
+        Text {
+            spans: [
+                Standard {
+                    text: "A ",
+                    strikethrough: false,
+                    link: None,
+                    strong: false,
+                    emphasis: false,
+                    code: false,
+                },
+                Standard {
+                    text: "link",
+                    strikethrough: false,
+                    link: Some(
+                        "https://example.com",
+                    ),
+                    strong: false,
+                    emphasis: false,
+                    code: false,
+                },
+                Standard {
+                    text: " at the end.",
+                    strikethrough: false,
+                    link: None,
+                    strong: false,
+                    emphasis: false,
+                    code: false,
+                },
+            ],
+            last_style: Cell {
+                value: None,
+            },
+            last_styled_spans: RefCell {
+                value: [],
+            },
+        },
+    ),
+]

@@ -94,3 +94,17 @@ CHANGELOG.ignore.md
 # Python bytecode files
 __pycache__/
 *.pyc
+
+# vendored iced checkout (kept out of the main repo build)
+/iced/
+
+# GUI client workspace: track sources, ignore local artifacts
+# (.bazelignore keeps the whole directory out of the main Bazel build)
+/gui/target/
+/gui/.refs/
+/gui/.tmp_probe/
+/gui/*.log
+/gui/*.pid
+/gui/*.png
+/gui/*.xwd
+/gui/cargo-git-mirror.ini

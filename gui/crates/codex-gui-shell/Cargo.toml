@@ -1,0 +1,29 @@
+[package]
+name = "codex-gui-shell"
+description = "The Codex GUI binary: iced application assembly and CLI flags"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "codex-gui"
+path = "src/main.rs"
+
+[dependencies]
+codex-gui-bridge = { workspace = true }
+codex-gui-ui = { workspace = true }
+iced = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[features]
+default = ["wgpu"]
+# Mirrors codex-gui-ui: GPU-less builds run tiny-skia-only via
+# `--no-default-features` (spec sections 7 and 10).
+wgpu = ["iced/wgpu"]
+
+[dev-dependencies]
+pretty_assertions = "1"
+
+[lints]
+workspace = true
