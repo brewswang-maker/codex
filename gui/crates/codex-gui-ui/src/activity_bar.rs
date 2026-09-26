@@ -47,6 +47,11 @@ pub fn activity_bar(state: &State) -> Element<'_, Message> {
         panes,
         Space::new().height(Fill),
         rail_entry(
+            IconKind::Sparkle,
+            state.skills.page_open,
+            Message::SkillsPageToggled
+        ),
+        rail_entry(
             IconKind::Gear,
             state.settings.open,
             Message::SettingsToggled

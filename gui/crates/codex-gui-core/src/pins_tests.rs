@@ -1,4 +1,5 @@
 //! Unit coverage of the pinned-thread store.
+#![allow(clippy::expect_used, clippy::panic)]
 
 use super::PinnedThreads;
 

@@ -12,9 +12,19 @@ use codex_app_server_protocol::GetAccountParams;
 use codex_app_server_protocol::GetAccountResponse;
 use codex_app_server_protocol::InitializeParams;
 use codex_app_server_protocol::LoginAccountParams;
+use codex_app_server_protocol::MarketplaceAddParams;
+use codex_app_server_protocol::MarketplaceAddResponse;
 use codex_app_server_protocol::MergeStrategy;
 use codex_app_server_protocol::ModelListParams;
 use codex_app_server_protocol::ModelListResponse;
+use codex_app_server_protocol::PluginAuthPolicy;
+use codex_app_server_protocol::PluginInstallParams;
+use codex_app_server_protocol::PluginInstallResponse;
+use codex_app_server_protocol::PluginListParams;
+use codex_app_server_protocol::PluginListResponse;
+use codex_app_server_protocol::PluginReadParams;
+use codex_app_server_protocol::PluginReadResponse;
+use codex_app_server_protocol::PluginUninstallParams;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::SkillsConfigWriteParams;
@@ -695,7 +705,7 @@ async fn provider_table_write_round_trip() {
                     },
                     ConfigEdit {
                         key_path: "model".to_string(),
-                        value: serde_json::json!("deepseek-v4-flash"),
+                        value: serde_json::json!("deepseek-flash"),
                         merge_strategy: MergeStrategy::Upsert,
                     },
                 ],
@@ -753,4 +763,148 @@ async fn skills_list_round_trip_and_toggle() {
         .await
         .expect("skills/config/write succeeds");
     assert_eq!(written["effectiveEnabled"], serde_json::json!(false));
+}
+
+#[tokio::test]
+async fn plugin_market_round_trip() {
+    let (client, _events) = codex_gui_bridge::start(mock_flags("basic-turn"))
+        .await
+        .expect("mock app-server starts");
+    let _ignored = client
+        .call(|id| ClientRequest::Initialize {
+            request_id: id,
+            params: initialize_params(),
+        })
+        .await
+        .expect("initialize succeeds");
+
+    // The market tab's browse call lists the mock marketplace with its one
+    // installable plugin.
+    let listed = client
+        .call(|id| ClientRequest::PluginList {
+            request_id: id,
+            params: PluginListParams {
+                cwds: None,
+                marketplace_kinds: None,
+                force_refetch: false,
+            },
+        })
+        .await
+        .expect("plugin/list succeeds");
+    let listed = serde_json::from_value::<PluginListResponse>(listed).expect("valid payload");
+    assert_eq!(listed.marketplaces.len(), 1);
+    let marketplace = &listed.marketplaces[0];
+    assert_eq!(marketplace.name, "local-market");
+    assert_eq!(
+        marketplace
+            .interface
+            .as_ref()
+            .and_then(|interface| interface.display_name.as_deref()),
+        Some("本地市场")
+    );
+    let summary = &marketplace.plugins[0];
+    assert_eq!(summary.id, "pdf-tools@local-market");
+    assert_eq!(summary.name, "pdf-tools");
+    assert!(!summary.installed);
+    let marketplace_path = marketplace.path.clone().expect("a local marketplace path");
+
+    // The detail expansion reveals the skills an installation adds.
+    let read = client
+        .call(|id| ClientRequest::PluginRead {
+            request_id: id,
+            params: PluginReadParams {
+                marketplace_path: Some(marketplace_path.clone()),
+                remote_marketplace_name: None,
+                plugin_name: "pdf-tools".to_string(),
+            },
+        })
+        .await
+        .expect("plugin/read succeeds");
+    let read = serde_json::from_value::<PluginReadResponse>(read).expect("valid payload");
+    let skill_names: Vec<&str> = read
+        .plugin
+        .skills
+        .iter()
+        .map(|skill| skill.name.as_str())
+        .collect();
+    assert_eq!(skill_names, vec!["pdf-split", "pdf-merge"]);
+
+    // Installing returns the auth policy the GUI surfaces in its notice.
+    let installed = client
+        .call(|id| ClientRequest::PluginInstall {
+            request_id: id,
+            params: PluginInstallParams {
+                marketplace_path: Some(marketplace_path),
+                remote_marketplace_name: None,
+                install_attempt_id: None,
+                plugin_name: "pdf-tools".to_string(),
+            },
+        })
+        .await
+        .expect("plugin/install succeeds");
+    let installed =
+        serde_json::from_value::<PluginInstallResponse>(installed).expect("valid payload");
+    assert_eq!(installed.auth_policy, PluginAuthPolicy::OnUse);
+    assert!(installed.apps_needing_auth.is_empty());
+
+    // The installed skill now materializes in the inventory.
+    let listed = client
+        .call(|id| ClientRequest::SkillsList {
+            request_id: id,
+            params: SkillsListParams::default(),
+        })
+        .await
+        .expect("skills/list succeeds");
+    let listed = serde_json::from_value::<SkillsListResponse>(listed).expect("valid payload");
+    let installed_skill = listed.data[0]
+        .skills
+        .iter()
+        .find(|skill| skill.name == "pdf-split")
+        .expect("the installed plugin skill is listed");
+    assert_eq!(
+        installed_skill.plugin_id.as_deref(),
+        Some("pdf-tools@local-market")
+    );
+
+    // Uninstalling removes it again.
+    let uninstalled = client
+        .call(|id| ClientRequest::PluginUninstall {
+            request_id: id,
+            params: PluginUninstallParams {
+                plugin_id: "pdf-tools@local-market".to_string(),
+            },
+        })
+        .await
+        .expect("plugin/uninstall succeeds");
+    assert_eq!(uninstalled, serde_json::json!({}));
+    let listed = client
+        .call(|id| ClientRequest::SkillsList {
+            request_id: id,
+            params: SkillsListParams::default(),
+        })
+        .await
+        .expect("skills/list succeeds");
+    let listed = serde_json::from_value::<SkillsListResponse>(listed).expect("valid payload");
+    assert!(
+        listed.data[0]
+            .skills
+            .iter()
+            .all(|skill| skill.name != "pdf-split")
+    );
+
+    // Adding a marketplace source acknowledges the discovered name.
+    let added = client
+        .call(|id| ClientRequest::MarketplaceAdd {
+            request_id: id,
+            params: MarketplaceAddParams {
+                source: "https://example.com/marketplace.git".to_string(),
+                ref_name: None,
+                sparse_paths: None,
+            },
+        })
+        .await
+        .expect("marketplace/add succeeds");
+    let added = serde_json::from_value::<MarketplaceAddResponse>(added).expect("valid payload");
+    assert_eq!(added.marketplace_name, "local-market");
+    assert!(!added.already_added);
 }

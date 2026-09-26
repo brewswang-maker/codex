@@ -8,6 +8,7 @@
 //! reducer.
 
 use codex_app_server_protocol::FileUpdateChange;
+use codex_app_server_protocol::McpToolCallStatus;
 use codex_app_server_protocol::PatchChangeKind;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ThreadItem;
@@ -29,6 +30,15 @@ pub enum Entry {
     },
     /// An assistant message; `text` grows while deltas stream in.
     AgentMessage { id: String, text: String },
+    /// A reasoning item: the model's visible thinking. `summary` parts are
+    /// what the model chose to expose; `content` holds raw reasoning when no
+    /// summary was produced. Both grow part-wise through their own delta
+    /// notifications and are finalized by the completed snapshot.
+    Reasoning {
+        id: String,
+        summary: Vec<String>,
+        content: Vec<String>,
+    },
     /// A command execution item; `output` grows while output deltas
     /// stream in and is finalized by the completed snapshot, which also
     /// carries the exit code and wall duration.
@@ -39,12 +49,51 @@ pub enum Entry {
         exit_code: Option<i32>,
         duration_ms: Option<i64>,
     },
+    /// One MCP tool call; `arguments` and `result` are pretty-printed JSON
+    /// for the expandable detail well.
+    McpToolCall {
+        id: String,
+        server: String,
+        tool: String,
+        status: String,
+        arguments: String,
+        result: Option<String>,
+        error: Option<String>,
+        duration_ms: Option<i64>,
+    },
     /// One patch-apply item; rendered as a single summary row, with the
     /// per-file diffs kept for the diff overlay.
     FileChange {
         id: String,
         changes: Vec<FileChangeRecord>,
     },
+    /// A quiet divider row for background lifecycle events the transcript
+    /// should acknowledge: context compaction and review-mode boundaries.
+    SystemNote { id: String, text: String },
+}
+
+impl Entry {
+    /// The reasoning body to display: the joined summary parts, falling
+    /// back to the joined raw content parts when no summary was streamed.
+    pub fn reasoning_text(&self) -> String {
+        let Entry::Reasoning {
+            summary, content, ..
+        } = self
+        else {
+            return String::new();
+        };
+        let parts = if summary.iter().any(|part| !part.is_empty()) {
+            summary
+        } else {
+            content
+        };
+        parts
+            .iter()
+            .filter(|part| !part.is_empty())
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
 }
 
 /// Flat display-ready record of one changed file.
@@ -95,7 +144,29 @@ impl Transcript {
             ServerNotification::CommandExecutionOutputDelta(delta) => {
                 self.append_command_delta(&delta.item_id, &delta.delta);
             }
+            ServerNotification::ReasoningSummaryTextDelta(delta) => {
+                self.append_reasoning_delta(
+                    &delta.item_id,
+                    delta.summary_index,
+                    &delta.delta,
+                    true,
+                );
+            }
+            ServerNotification::ReasoningSummaryPartAdded(added) => {
+                self.ensure_reasoning_part(&added.item_id, added.summary_index, true);
+            }
+            ServerNotification::ReasoningTextDelta(delta) => {
+                self.append_reasoning_delta(
+                    &delta.item_id,
+                    delta.content_index,
+                    &delta.delta,
+                    false,
+                );
+            }
             ServerNotification::TurnPlanUpdated(plan) => self.apply_plan(plan),
+            // `thread/compacted` is deprecated in favor of the
+            // `contextCompaction` item handled in `apply_started`; handling
+            // both would duplicate the divider.
             _ignored => {}
         }
     }
@@ -192,6 +263,17 @@ impl Transcript {
                     text: text.clone(),
                 });
             }
+            ThreadItem::Reasoning {
+                id,
+                summary,
+                content,
+            } => {
+                self.entries.push(Entry::Reasoning {
+                    id: id.clone(),
+                    summary: summary.clone(),
+                    content: content.clone(),
+                });
+            }
             ThreadItem::CommandExecution { id, command, .. } => {
                 self.entries.push(Entry::CommandExecution {
                     id: id.clone(),
@@ -201,14 +283,51 @@ impl Transcript {
                     duration_ms: None,
                 });
             }
+            ThreadItem::McpToolCall {
+                id,
+                server,
+                tool,
+                status,
+                arguments,
+                ..
+            } => {
+                self.entries.push(Entry::McpToolCall {
+                    id: id.clone(),
+                    server: server.clone(),
+                    tool: tool.clone(),
+                    status: mcp_status_label(status),
+                    arguments: pretty_json(arguments),
+                    result: None,
+                    error: None,
+                    duration_ms: None,
+                });
+            }
             ThreadItem::FileChange { id, changes, .. } => {
                 self.entries.push(Entry::FileChange {
                     id: id.clone(),
                     changes: file_change_records(changes),
                 });
             }
-            // MCP calls, ... get their own entry kinds in
-            // later stages; skip them for now.
+            ThreadItem::ContextCompaction { id } => {
+                self.entries.push(Entry::SystemNote {
+                    id: id.clone(),
+                    text: String::from("上下文已自动压缩"),
+                });
+            }
+            ThreadItem::EnteredReviewMode { id, .. } => {
+                self.entries.push(Entry::SystemNote {
+                    id: id.clone(),
+                    text: String::from("开始代码审查"),
+                });
+            }
+            ThreadItem::ExitedReviewMode { id, .. } => {
+                self.entries.push(Entry::SystemNote {
+                    id: id.clone(),
+                    text: String::from("代码审查完成"),
+                });
+            }
+            // Hook prompts, plans, sub-agent traffic, ... get their own
+            // entry kinds in later stages; skip them for now.
             _other => {}
         }
     }
@@ -281,7 +400,147 @@ impl Transcript {
                     }),
                 }
             }
+            ThreadItem::Reasoning {
+                id,
+                summary,
+                content,
+            } => {
+                // Trust the completed snapshot over the streamed deltas.
+                match self.reasoning_entry(id) {
+                    Some(Entry::Reasoning {
+                        summary: entry_summary,
+                        content: entry_content,
+                        ..
+                    }) => {
+                        *entry_summary = summary.clone();
+                        *entry_content = content.clone();
+                    }
+                    _missing => self.entries.push(Entry::Reasoning {
+                        id: id.clone(),
+                        summary: summary.clone(),
+                        content: content.clone(),
+                    }),
+                }
+            }
+            ThreadItem::McpToolCall {
+                id,
+                status,
+                result,
+                error,
+                duration_ms,
+                ..
+            } => {
+                // Trust the completed snapshot over the started item.
+                let result_text = result.as_deref().map(mcp_result_text);
+                let error_text = error.as_ref().map(|error| error.message.clone());
+                match self.mcp_entry(id) {
+                    Some(Entry::McpToolCall {
+                        status: entry_status,
+                        result: entry_result,
+                        error: entry_error,
+                        duration_ms: entry_duration,
+                        ..
+                    }) => {
+                        *entry_status = mcp_status_label(status);
+                        *entry_result = result_text;
+                        *entry_error = error_text;
+                        *entry_duration = *duration_ms;
+                    }
+                    _missing => self.entries.push(Entry::McpToolCall {
+                        id: id.clone(),
+                        server: String::new(),
+                        tool: String::new(),
+                        status: mcp_status_label(status),
+                        arguments: String::new(),
+                        result: result_text,
+                        error: error_text,
+                        duration_ms: *duration_ms,
+                    }),
+                }
+            }
             _other => {}
+        }
+    }
+
+    /// The reasoning entry with the given item id, when it already exists.
+    fn reasoning_entry(&mut self, item_id: &str) -> Option<&mut Entry> {
+        self.entries
+            .iter_mut()
+            .find(|entry| matches!(entry, Entry::Reasoning { id, .. } if id == item_id))
+    }
+
+    /// The MCP call entry with the given item id, when it already exists.
+    fn mcp_entry(&mut self, item_id: &str) -> Option<&mut Entry> {
+        self.entries
+            .iter_mut()
+            .find(|entry| matches!(entry, Entry::McpToolCall { id, .. } if id == item_id))
+    }
+
+    /// Appends one reasoning delta into the part list named by `index`,
+    /// materializing the entry (and the part slot) when delivery is out of
+    /// order.
+    fn append_reasoning_delta(&mut self, item_id: &str, index: i64, delta: &str, summary: bool) {
+        let part = usize::try_from(index.max(0)).unwrap_or(0);
+        let position = match self
+            .entries
+            .iter()
+            .position(|entry| matches!(entry, Entry::Reasoning { id, .. } if id == item_id))
+        {
+            Some(position) => position,
+            None => {
+                self.entries.push(Entry::Reasoning {
+                    id: item_id.to_string(),
+                    summary: Vec::new(),
+                    content: Vec::new(),
+                });
+                self.entries.len() - 1
+            }
+        };
+        let Some(Entry::Reasoning {
+            summary: parts,
+            content,
+            ..
+        }) = self.entries.get_mut(position)
+        else {
+            return;
+        };
+        let parts = if summary { parts } else { content };
+        while parts.len() <= part {
+            parts.push(String::new());
+        }
+        parts[part].push_str(delta);
+    }
+
+    /// Ensures the part slot named by `index` exists so subsequent deltas
+    /// for that index append into a fresh section.
+    fn ensure_reasoning_part(&mut self, item_id: &str, index: i64, summary: bool) {
+        let part = usize::try_from(index.max(0)).unwrap_or(0);
+        let position = match self
+            .entries
+            .iter()
+            .position(|entry| matches!(entry, Entry::Reasoning { id, .. } if id == item_id))
+        {
+            Some(position) => position,
+            None => {
+                self.entries.push(Entry::Reasoning {
+                    id: item_id.to_string(),
+                    summary: Vec::new(),
+                    content: Vec::new(),
+                });
+                self.entries.len() - 1
+            }
+        };
+        let Some(Entry::Reasoning {
+            summary: parts,
+            content,
+            ..
+        }) = self.entries.get_mut(position)
+        else {
+            return;
+        };
+        let parts = if summary { parts } else { content };
+        while parts.len() <= part {
+            parts.push(String::new());
         }
     }
 
@@ -341,6 +600,30 @@ fn change_kind_label(kind: &PatchChangeKind) -> String {
         PatchChangeKind::Delete => String::from("delete"),
         PatchChangeKind::Update { .. } => String::from("update"),
     }
+}
+
+/// Display-ready label for an MCP tool call status.
+fn mcp_status_label(status: &McpToolCallStatus) -> String {
+    match status {
+        McpToolCallStatus::InProgress => String::from("running…"),
+        McpToolCallStatus::Completed => String::from("done"),
+        McpToolCallStatus::Failed => String::from("failed"),
+    }
+}
+
+/// Pretty-printed JSON for the detail wells; a JSON value always
+/// serializes, so the fallback is unreachable in practice.
+fn pretty_json(value: &serde_json::Value) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_default()
+}
+
+/// Pretty-printed MCP tool result (content blocks plus structured
+/// content) for the detail well; serialization of these wire-shaped
+/// values cannot fail in practice.
+fn mcp_result_text(result: &codex_app_server_protocol::McpToolCallResult) -> String {
+    serde_json::to_value(result)
+        .map(|value| pretty_json(&value))
+        .unwrap_or_default()
 }
 
 /// Display-ready label for a plan step status.

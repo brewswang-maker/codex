@@ -95,6 +95,18 @@ pub fn faint_text(_theme: &Theme) -> iced::widget::text::Style {
     iced::widget::text::Style { color: Some(FAINT) }
 }
 
+/// Brand-green text, e.g. the source-control graph dots.
+pub fn brand(_theme: &Theme) -> iced::widget::text::Style {
+    iced::widget::text::Style { color: Some(BRAND) }
+}
+
+/// Destructive text, e.g. the delete confirmation hint.
+pub fn danger_text(_theme: &Theme) -> iced::widget::text::Style {
+    iced::widget::text::Style {
+        color: Some(DANGER),
+    }
+}
+
 /// How many recent projects the welcome page lists.
 pub const WELCOME_RECENTS_SHOWN: usize = 4;
 
@@ -227,6 +239,29 @@ pub fn primary_button(
         text_color: BG,
         border: iced::Border {
             radius: RADIUS_MD.into(),
+            ..iced::Border::default()
+        },
+        ..iced::widget::button::Style::default()
+    }
+}
+
+/// The destructive red button, e.g. confirming a removal.
+pub fn danger_button(
+    _theme: &Theme,
+    status: iced::widget::button::Status,
+) -> iced::widget::button::Style {
+    let base = color!(0xE26A66);
+    iced::widget::button::Style {
+        background: Some(
+            match status {
+                iced::widget::button::Status::Hovered => base,
+                _ => DANGER,
+            }
+            .into(),
+        ),
+        text_color: BG,
+        border: iced::Border {
+            radius: RADIUS_SM.into(),
             ..iced::Border::default()
         },
         ..iced::widget::button::Style::default()

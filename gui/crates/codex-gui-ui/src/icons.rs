@@ -33,6 +33,8 @@ pub enum IconKind {
     Search,
     /// Upward send arrow.
     SendUp,
+    /// Filled square for the interrupt action.
+    Stop,
     /// Git branch.
     GitBranch,
     /// Copy (two stacked rectangles).
@@ -53,6 +55,8 @@ pub enum IconKind {
     Remote,
     /// Extensions rail entry (grid of squares).
     Extensions,
+    /// Skills rail entry (a large sparkle with a small companion).
+    Sparkle,
 }
 
 /// A single drawn icon; drop it into a `canvas` widget.
@@ -147,6 +151,16 @@ impl<Message> canvas::Program<Message> for Icon {
                 );
                 frame.stroke(&line(12.0, 6.0, 12.0, 19.0, k), stroke);
             }
+            IconKind::Stop => {
+                frame.fill(
+                    &Path::rounded_rectangle(
+                        point(6.5, 6.5, k),
+                        Size::new(11.0 * k, 11.0 * k),
+                        (2.0 * k).into(),
+                    ),
+                    self.color,
+                );
+            }
             IconKind::GitBranch => {
                 frame.stroke(&Path::circle(point(7.0, 6.0, k), 2.2 * k), stroke);
                 frame.stroke(&Path::circle(point(7.0, 18.0, k), 2.2 * k), stroke);
@@ -234,6 +248,26 @@ impl<Message> canvas::Program<Message> for Icon {
                         stroke,
                     );
                 }
+            }
+            IconKind::Sparkle => {
+                // A four-point sparkle plus a small companion star.
+                frame.stroke(
+                    &Path::new(|p| {
+                        p.move_to(point(10.5, 7.0, k));
+                        p.quadratic_curve_to(point(11.2, 12.8, k), point(17.0, 13.5, k));
+                        p.quadratic_curve_to(point(11.2, 14.2, k), point(10.5, 20.0, k));
+                        p.quadratic_curve_to(point(9.8, 14.2, k), point(4.0, 13.5, k));
+                        p.quadratic_curve_to(point(9.8, 12.8, k), point(10.5, 7.0, k));
+                        p.close();
+                        p.move_to(point(18.5, 2.5, k));
+                        p.quadratic_curve_to(point(18.8, 5.2, k), point(21.5, 5.5, k));
+                        p.quadratic_curve_to(point(18.8, 5.8, k), point(18.5, 8.5, k));
+                        p.quadratic_curve_to(point(18.2, 5.8, k), point(15.5, 5.5, k));
+                        p.quadratic_curve_to(point(18.2, 5.2, k), point(18.5, 2.5, k));
+                        p.close();
+                    }),
+                    stroke,
+                );
             }
             IconKind::Copy => {
                 frame.stroke(

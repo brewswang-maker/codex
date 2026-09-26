@@ -544,3 +544,304 @@ fn changes_of(entry: &Entry) -> &[super::transcript::FileChangeRecord] {
         other => panic!("unexpected entry: {other:?}"),
     }
 }
+
+fn reasoning_started(id: &str) -> ServerNotification {
+    notification(json!({
+        "method": "item/started",
+        "params": {
+            "item": {"type": "reasoning", "id": id, "summary": [], "content": []},
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "startedAtMs": 1
+        }
+    }))
+}
+
+fn reasoning_summary_delta(id: &str, delta: &str, index: i64) -> ServerNotification {
+    notification(json!({
+        "method": "item/reasoning/summaryTextDelta",
+        "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "itemId": id,
+            "delta": delta,
+            "summaryIndex": index
+        }
+    }))
+}
+
+fn reasoning_text_delta(id: &str, delta: &str, index: i64) -> ServerNotification {
+    notification(json!({
+        "method": "item/reasoning/textDelta",
+        "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "itemId": id,
+            "delta": delta,
+            "contentIndex": index
+        }
+    }))
+}
+
+#[test]
+fn reasoning_deltas_accumulate_per_part() {
+    let mut transcript = Transcript::default();
+
+    transcript.apply(&reasoning_started("r1"));
+    transcript.apply(&reasoning_summary_delta("r1", "first ", 0));
+    transcript.apply(&reasoning_summary_delta("r1", "thought", 0));
+    transcript.apply(&reasoning_summary_delta("r1", "second part", 1));
+
+    let entries = transcript.entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].reasoning_text(), "first thought\n\nsecond part");
+}
+
+#[test]
+fn reasoning_delta_before_start_materializes_entry() {
+    let mut transcript = Transcript::default();
+
+    transcript.apply(&reasoning_text_delta("r1", "orphan thinking", 0));
+
+    let entries = transcript.entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].reasoning_text(), "orphan thinking");
+}
+
+#[test]
+fn reasoning_completed_snapshot_wins_over_deltas() {
+    let mut transcript = Transcript::default();
+
+    transcript.apply(&reasoning_started("r1"));
+    transcript.apply(&reasoning_summary_delta("r1", "partial", 0));
+    transcript.apply(&notification(json!({
+        "method": "item/completed",
+        "params": {
+            "item": {
+                "type": "reasoning",
+                "id": "r1",
+                "summary": ["the full summary"],
+                "content": []
+            },
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "completedAtMs": 2
+        }
+    })));
+
+    let entries = transcript.entries();
+    assert_eq!(entries.len(), 1, "no duplicate entry on completion");
+    assert_eq!(entries[0].reasoning_text(), "the full summary");
+}
+
+#[test]
+fn reasoning_prefers_summary_over_raw_content() {
+    let mut transcript = Transcript::default();
+
+    transcript.apply(&notification(json!({
+        "method": "item/completed",
+        "params": {
+            "item": {
+                "type": "reasoning",
+                "id": "r1",
+                "summary": [],
+                "content": ["raw chain of thought"]
+            },
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "completedAtMs": 2
+        }
+    })));
+
+    assert_eq!(
+        transcript.entries()[0].reasoning_text(),
+        "raw chain of thought"
+    );
+}
+
+fn mcp_started(id: &str) -> ServerNotification {
+    notification(json!({
+        "method": "item/started",
+        "params": {
+            "item": {
+                "type": "mcpToolCall",
+                "id": id,
+                "server": "codex_apps",
+                "tool": "calendar.create_event",
+                "status": "inProgress",
+                "arguments": {"title": "standup"}
+            },
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "startedAtMs": 1
+        }
+    }))
+}
+
+fn mcp_completed(id: &str) -> ServerNotification {
+    notification(json!({
+        "method": "item/completed",
+        "params": {
+            "item": {
+                "type": "mcpToolCall",
+                "id": id,
+                "server": "codex_apps",
+                "tool": "calendar.create_event",
+                "status": "completed",
+                "arguments": {"title": "standup"},
+                "result": {"content": [{"type": "text", "text": "event created"}]},
+                "durationMs": 42
+            },
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "completedAtMs": 2
+        }
+    }))
+}
+
+#[test]
+fn mcp_call_streams_from_started_to_completed() {
+    let mut transcript = Transcript::default();
+
+    transcript.apply(&mcp_started("mcp1"));
+    let entries = transcript.entries();
+    assert_eq!(entries.len(), 1);
+    let Entry::McpToolCall {
+        server,
+        tool,
+        status,
+        arguments,
+        result,
+        error,
+        ..
+    } = &entries[0]
+    else {
+        panic!("unexpected entry: {:?}", entries[0]);
+    };
+    assert_eq!(server, "codex_apps");
+    assert_eq!(tool, "calendar.create_event");
+    assert_eq!(status, "running…");
+    assert!(
+        arguments.contains("\"title\""),
+        "pretty arguments: {arguments}"
+    );
+    assert!(result.is_none());
+    assert!(error.is_none());
+
+    transcript.apply(&mcp_completed("mcp1"));
+    let entries = transcript.entries();
+    assert_eq!(entries.len(), 1, "no duplicate entry on completion");
+    let Entry::McpToolCall {
+        status,
+        result,
+        duration_ms,
+        ..
+    } = &entries[0]
+    else {
+        panic!("unexpected entry: {:?}", entries[0]);
+    };
+    assert_eq!(status, "done");
+    assert_eq!(*duration_ms, Some(42));
+    let result = result.as_deref().expect("result text present");
+    assert!(result.contains("event created"), "pretty result: {result}");
+}
+
+#[test]
+fn mcp_failed_call_carries_its_error() {
+    let mut transcript = Transcript::default();
+
+    transcript.apply(&notification(json!({
+        "method": "item/completed",
+        "params": {
+            "item": {
+                "type": "mcpToolCall",
+                "id": "mcp2",
+                "server": "codex_apps",
+                "tool": "calendar.list_events",
+                "status": "failed",
+                "arguments": {},
+                "error": {"message": "connector offline"}
+            },
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "completedAtMs": 2
+        }
+    })));
+
+    let entries = transcript.entries();
+    let Entry::McpToolCall { status, error, .. } = &entries[0] else {
+        panic!("unexpected entry: {:?}", entries[0]);
+    };
+    assert_eq!(status, "failed");
+    assert_eq!(error.as_deref(), Some("connector offline"));
+}
+
+#[test]
+fn compaction_item_lands_as_a_system_note() {
+    let mut transcript = Transcript::default();
+
+    transcript.apply(&notification(json!({
+        "method": "item/started",
+        "params": {
+            "item": {"type": "contextCompaction", "id": "cmp1"},
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "startedAtMs": 1
+        }
+    })));
+    transcript.apply(&notification(json!({
+        "method": "item/completed",
+        "params": {
+            "item": {"type": "contextCompaction", "id": "cmp1"},
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "completedAtMs": 2
+        }
+    })));
+
+    assert_eq!(
+        transcript.entries(),
+        &[Entry::SystemNote {
+            id: "cmp1".to_string(),
+            text: "上下文已自动压缩".to_string(),
+        }],
+    );
+}
+
+#[test]
+fn review_boundaries_land_as_system_notes() {
+    let mut transcript = Transcript::default();
+
+    transcript.apply(&notification(json!({
+        "method": "item/started",
+        "params": {
+            "item": {"type": "enteredReviewMode", "id": "rev1", "review": "Review requested."},
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "startedAtMs": 1
+        }
+    })));
+    transcript.apply(&notification(json!({
+        "method": "item/started",
+        "params": {
+            "item": {"type": "exitedReviewMode", "id": "rev2", "review": "findings"},
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "startedAtMs": 2
+        }
+    })));
+
+    assert_eq!(
+        transcript.entries(),
+        &[
+            Entry::SystemNote {
+                id: "rev1".to_string(),
+                text: "开始代码审查".to_string(),
+            },
+            Entry::SystemNote {
+                id: "rev2".to_string(),
+                text: "代码审查完成".to_string(),
+            },
+        ],
+    );
+}

@@ -36,22 +36,24 @@ pub fn layered<'a>(
 
     stack![
         base.into(),
-        opaque(mouse_area(center(opaque(dialog(approval))).style(
-            |_theme| {
-                container::Style {
-                    background: Some(
-                        Color {
-                            a: 0.45,
-                            ..Color::BLACK
-                        }
-                        .into(),
-                    ),
-                    ..container::Style::default()
-                }
-            }
-        )))
+        opaque(mouse_area(center(opaque(dialog(approval))).style(mask)))
     ]
     .into()
+}
+
+/// The dimming backdrop shared by every modal overlay; it swallows clicks
+/// so the dialog below stays the only interactive surface.
+pub(crate) fn mask(_theme: &iced::Theme) -> container::Style {
+    container::Style {
+        background: Some(
+            Color {
+                a: 0.45,
+                ..Color::BLACK
+            }
+            .into(),
+        ),
+        ..container::Style::default()
+    }
 }
 
 fn dialog(approval: &PendingApproval) -> Element<'_, Message> {
@@ -93,7 +95,7 @@ fn dialog(approval: &PendingApproval) -> Element<'_, Message> {
 }
 
 /// The modal card: white surface, hairline border, large radius.
-fn dialog_surface(_theme: &iced::Theme) -> container::Style {
+pub(crate) fn dialog_surface(_theme: &iced::Theme) -> container::Style {
     container::Style {
         background: Some(theme::BG.into()),
         border: iced::Border {
@@ -105,7 +107,7 @@ fn dialog_surface(_theme: &iced::Theme) -> container::Style {
     }
 }
 
-fn detail(text_line: &str) -> Element<'static, Message> {
+pub(crate) fn detail(text_line: &str) -> Element<'static, Message> {
     container(
         text(String::from(text_line))
             .size(theme::SIZE_SM)
@@ -118,7 +120,7 @@ fn detail(text_line: &str) -> Element<'static, Message> {
 }
 
 /// The quoted detail well behind command/reason text.
-fn detail_well(_theme: &iced::Theme) -> container::Style {
+pub(crate) fn detail_well(_theme: &iced::Theme) -> container::Style {
     container::Style {
         background: Some(theme::CARD.into()),
         border: iced::Border {
@@ -129,7 +131,7 @@ fn detail_well(_theme: &iced::Theme) -> container::Style {
     }
 }
 
-fn muted(_theme: &iced::Theme) -> iced::widget::text::Style {
+pub(crate) fn muted(_theme: &iced::Theme) -> iced::widget::text::Style {
     iced::widget::text::Style {
         color: Some(theme::MUTED),
     }
@@ -182,7 +184,7 @@ fn actions<'a>(request_id: &str, kind: &ApprovalKind) -> Element<'a, Message> {
 }
 
 /// The quiet secondary button: hairline chip, muted label.
-fn quiet_button(_theme: &iced::Theme, _status: button::Status) -> button::Style {
+pub(crate) fn quiet_button(_theme: &iced::Theme, _status: button::Status) -> button::Style {
     button::Style {
         background: Some(theme::BG.into()),
         text_color: theme::MUTED,
@@ -195,13 +197,13 @@ fn quiet_button(_theme: &iced::Theme, _status: button::Status) -> button::Style 
     }
 }
 
-fn deny_label(_theme: &iced::Theme) -> iced::widget::text::Style {
+pub(crate) fn deny_label(_theme: &iced::Theme) -> iced::widget::text::Style {
     iced::widget::text::Style {
         color: Some(theme::DANGER),
     }
 }
 
-fn allow_label(_theme: &iced::Theme) -> iced::widget::text::Style {
+pub(crate) fn allow_label(_theme: &iced::Theme) -> iced::widget::text::Style {
     iced::widget::text::Style {
         color: Some(theme::BG),
     }

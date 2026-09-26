@@ -4,6 +4,7 @@
 use super::GitInfo;
 use super::GitStatus;
 use super::coarse_status;
+use super::decode_path;
 
 #[test]
 fn porcelain_codes_collapse_into_coarse_states() {
@@ -36,6 +37,7 @@ fn changed_files_projects_the_tree_in_order() {
         ]
         .into_iter()
         .collect(),
+        commits: Vec::new(),
     };
 
     assert_eq!(
@@ -95,6 +97,33 @@ impl Drop for ScratchRepo {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.root);
     }
+}
+
+#[test]
+fn quoted_octal_and_rename_paths_decode_to_utf8() {
+    // The core.quotepath=false output for a Chinese filename stays raw.
+    assert_eq!(
+        decode_path("docs/报表设计_v1.0.md"),
+        "docs/报表设计_v1.0.md"
+    );
+    // The quotepath fallback: quoted C-escapes decode back to bytes.
+    assert_eq!(
+        decode_path("\"docs/\\346\\212\\245\\350\\241\\250.md\""),
+        "docs/报表.md"
+    );
+    // Rename rows keep the destination path.
+    assert_eq!(decode_path("old/暗.md -> new/亮.md"), "new/亮.md");
+    assert_eq!(
+        decode_path("\"old/\\345\\256\\243.md\" -> \"new/\\344\\274\\240.md\""),
+        "new/传.md"
+    );
+}
+
+#[test]
+fn escaped_plain_ascii_paths_round_trip() {
+    assert_eq!(decode_path("a\\tb.txt"), "a\tb.txt");
+    assert_eq!(decode_path("quote\\\"name.txt"), "quote\"name.txt");
+    assert_eq!(decode_path("plain.txt"), "plain.txt");
 }
 
 #[test]

@@ -5,19 +5,26 @@ use crate::message::AppMode;
 use crate::message::MenuId;
 use crate::message::QuestScenario;
 use crate::message::SidebarTab;
+use codex_app_server_protocol::McpServerStatus;
 use codex_app_server_protocol::ThreadTokenUsage;
 use codex_gui_bridge::Client;
 use codex_gui_bridge::Flags;
 use codex_gui_core::Approvals;
+use codex_gui_core::ElicitationDraft;
+use codex_gui_core::Elicitations;
 use codex_gui_core::GitInfo;
 use codex_gui_core::MarkdownStream;
+use codex_gui_core::Mentions;
 use codex_gui_core::PinnedThreads;
+use codex_gui_core::QuestionDraft;
+use codex_gui_core::Questions;
 use codex_gui_core::RecentProjects;
 use codex_gui_core::Sessions;
 use codex_gui_core::Settings;
 use codex_gui_core::SkillsBoard;
 use codex_gui_core::StatusBoard;
 use codex_gui_core::Transcript;
+use codex_gui_core::VendorCatalog;
 use iced::widget::markdown;
 use iced_swdir_tree::DirectoryTree;
 use std::collections::BTreeSet;
@@ -176,6 +183,28 @@ pub enum FileBody {
     Failed(String),
 }
 
+/// How a model-menu pick applies once its config write settles.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PendingModelApply {
+    /// Same vendor as the live binding: flip the model on the running
+    /// thread in place through `thread/settings/update`; no restart.
+    InPlace {
+        /// The thread to retarget.
+        thread_id: String,
+        /// The model id to switch to.
+        model: String,
+    },
+    /// Different vendor: the provider is fixed per thread, so the
+    /// running thread is forked onto the picked pair (its history comes
+    /// along) once the config write lands.
+    Retarget {
+        /// The provider the thread moves to.
+        provider_id: String,
+        /// The model id the thread moves to.
+        model: String,
+    },
+}
+
 /// Everything the update loop and the views need.
 pub struct State {
     /// Launch flags of the app-server connection (subscription identity).
@@ -185,6 +214,9 @@ pub struct State {
     pub client: Option<Client>,
     /// Active thread once bootstrap finished.
     pub thread_id: Option<String>,
+    /// The live turn id reported by `turn/started`, answering
+    /// `turn/interrupt` while the turn streams.
+    pub active_turn: Option<String>,
     /// Conversation model.
     pub transcript: Transcript,
     /// Parsed markdown per agent-message item id, grown incrementally via
@@ -194,14 +226,33 @@ pub struct State {
     pub stream: MarkdownStream,
     /// Server-initiated approvals awaiting a decision.
     pub approvals: Approvals,
+    /// Agent questions (`item/tool/requestUserInput`) awaiting answers.
+    pub questions: Questions,
+    /// Per-question drafts of the open input dialog (keyed by question id).
+    pub question_drafts: HashMap<String, QuestionDraft>,
+    /// MCP elicitations awaiting a decision.
+    pub elicitations: Elicitations,
+    /// Form drafts of the open elicitation dialog (keyed by property key).
+    pub elicitation_drafts: HashMap<String, ElicitationDraft>,
+    /// Validation failure of the current elicitation draft, if any.
+    pub elicitation_error: Option<String>,
     /// Sidebar inventory of resumable threads.
     pub sessions: Sessions,
+    /// Archived-thread inventory behind the sidebar's collapsible section.
+    pub archived: Sessions,
+    /// Whether the archived section is expanded.
+    pub archived_open: bool,
+    /// Whether the archived inventory has loaded at least once.
+    pub archived_loaded: bool,
     /// Status bar domain: model catalog, login badge, error banner.
     pub status_board: StatusBoard,
     /// Settings panel domain: config drafts and save lifecycle.
     pub settings: Settings,
     /// Skills domain: the flattened inventory and the picker visibility.
     pub skills: SkillsBoard,
+    /// The backend's `CODEX_HOME`, reported by `initialize`; the Skills
+    /// page's disk mutations live under it.
+    pub codex_home: Option<PathBuf>,
     /// Image attachments dropped or picked, pending the next submission.
     pub attachments: Attachments,
     /// Directory tree of the Files sidebar, rooted at the working directory.
@@ -227,6 +278,26 @@ pub struct State {
     pub recents: RecentProjects,
     /// Working-tree facts of the active project (branch, changes).
     pub git: GitInfo,
+    /// The multi-vendor model menu's merged catalog.
+    pub vendors: VendorCatalog,
+    /// Whether the Qoder-style model menu overlay is open.
+    pub model_menu_open: bool,
+    /// Whether a vendor-pick config write is in flight; its save
+    /// completion reopens the thread so the pick takes effect.
+    pub model_switch_pending: bool,
+    /// The `(provider, model)` pair the live thread is bound to, as
+    /// reported by its start/resume response or its settings updates;
+    /// `None` while no binding has been observed.
+    pub active_binding: Option<(String, String)>,
+    /// How the in-flight model-menu pick should apply once its config
+    /// write lands (in-place flip or thread retarget).
+    pub pending_model_apply: Option<PendingModelApply>,
+    /// Remote-explorer facts (SSH targets, Docker), probed lazily.
+    pub remote: RemotePane,
+    /// Workspace search replace-with draft; the query lives in `tree`.
+    pub search_replace: String,
+    /// Extension-marketplace filter text.
+    pub extension_filter: String,
     /// Latest thread token usage reported by the backend; drives the
     /// context chip in the task bar.
     pub token_usage: Option<ThreadTokenUsage>,
@@ -255,11 +326,33 @@ pub struct State {
     pub expanded_command_groups: BTreeSet<String>,
     /// Composer buffer.
     pub composer: String,
+    /// The composer's `@file` mention tracker: token query, hits, highlight.
+    pub mentions: Mentions,
+    /// Ids of reasoning cards the user collapsed; absent means expanded.
+    pub collapsed_reasoning: BTreeSet<String>,
+    /// Ids of MCP call cards currently showing their detail well.
+    pub expanded_mcp: BTreeSet<String>,
+    /// MCP server inventory rendered by the settings panel.
+    pub mcp_servers: Vec<McpServerStatus>,
+    /// Whether the MCP inventory has loaded at least once.
+    pub mcp_loaded: bool,
+    /// The MCP server whose OAuth sign-in is pending, with the URL the
+    /// user must open to finish it.
+    pub mcp_login: Option<McpLogin>,
     /// Connection/turn lifecycle for the status bar.
     pub status: Status,
     /// Bumped on every user-requested relaunch; part of the subscription
     /// identity so a new epoch spawns a fresh backend connection.
     pub connection_epoch: u64,
+}
+
+/// A pending MCP OAuth sign-in: which server and the URL to open.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpLogin {
+    /// The MCP server being signed in.
+    pub name: String,
+    /// The authorization URL the user must open in a browser.
+    pub url: String,
 }
 
 /// High-level lifecycle indicator.
@@ -273,6 +366,17 @@ pub enum Status {
     Thinking,
     /// The backend is gone; the payload describes why.
     Disconnected(String),
+}
+
+/// The remote-explorer pane facts and whether they have been probed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RemotePane {
+    /// SSH host aliases from `~/.ssh/config`.
+    pub targets: Vec<String>,
+    /// Whether a working Docker daemon answered; `None` until probed.
+    pub docker_available: Option<bool>,
+    /// Whether the pane has already run its probe.
+    pub loaded: bool,
 }
 
 /// The commit-composer overlay state (borrowed from AgentCodeGUI's
@@ -312,14 +416,23 @@ impl std::fmt::Debug for State {
             .field("flags", &self.flags)
             .field("client", &self.client)
             .field("thread_id", &self.thread_id)
+            .field("active_turn", &self.active_turn)
             .field("transcript", &self.transcript)
             .field("markdowns", &self.markdowns)
             .field("stream", &self.stream)
             .field("approvals", &self.approvals)
+            .field("questions", &self.questions)
+            .field("question_drafts", &self.question_drafts)
+            .field("elicitations", &self.elicitations)
+            .field("elicitation_drafts", &self.elicitation_drafts)
+            .field("elicitation_error", &self.elicitation_error)
             .field("sessions", &self.sessions)
+            .field("archived", &self.archived)
+            .field("archived_open", &self.archived_open)
             .field("status_board", &self.status_board)
             .field("settings", &self.settings)
             .field("skills", &self.skills)
+            .field("codex_home", &self.codex_home)
             .field("attachments", &self.attachments)
             .field("tree_root", &self.tree.root_path())
             .field("editor_tabs", &self.editor.tabs.len())
@@ -356,6 +469,11 @@ impl std::fmt::Debug for State {
                 &self.expanded_command_groups.len(),
             )
             .field("composer", &self.composer)
+            .field("mentions", &self.mentions)
+            .field("collapsed_reasoning", &self.collapsed_reasoning.len())
+            .field("expanded_mcp", &self.expanded_mcp.len())
+            .field("mcp_servers", &self.mcp_servers.len())
+            .field("mcp_login", &self.mcp_login)
             .field("status", &self.status)
             .field("connection_epoch", &self.connection_epoch)
             .finish()
@@ -369,14 +487,24 @@ impl State {
             flags,
             client: None,
             thread_id: None,
+            active_turn: None,
             transcript: Transcript::default(),
             markdowns: HashMap::new(),
             stream: MarkdownStream::default(),
             approvals: Approvals::default(),
+            questions: Questions::default(),
+            question_drafts: HashMap::new(),
+            elicitations: Elicitations::default(),
+            elicitation_drafts: HashMap::new(),
+            elicitation_error: None,
             sessions: Sessions::default(),
+            archived: Sessions::default(),
+            archived_open: false,
+            archived_loaded: false,
             status_board: StatusBoard::default(),
             settings: Settings::default(),
             skills: SkillsBoard::default(),
+            codex_home: None,
             attachments: Attachments::default(),
             tree: DirectoryTree::new(
                 std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
@@ -392,6 +520,14 @@ impl State {
             expanded_commands: BTreeSet::new(),
             recents: RecentProjects::load(RecentProjects::default_path()),
             git: GitInfo::default(),
+            vendors: VendorCatalog::skeleton(),
+            model_menu_open: false,
+            model_switch_pending: false,
+            active_binding: None,
+            pending_model_apply: None,
+            remote: RemotePane::default(),
+            search_replace: String::new(),
+            extension_filter: String::new(),
             token_usage: None,
             turn_diff: None,
             diff_overlay_open: false,
@@ -405,6 +541,12 @@ impl State {
             sidebar_filter: String::new(),
             expanded_command_groups: BTreeSet::new(),
             composer: String::new(),
+            mentions: Mentions::default(),
+            collapsed_reasoning: BTreeSet::new(),
+            expanded_mcp: BTreeSet::new(),
+            mcp_servers: Vec::new(),
+            mcp_loaded: false,
+            mcp_login: None,
             status: Status::Bootstrapping,
             connection_epoch: 0,
         }

@@ -12,6 +12,12 @@
 //!   the GUI's decision reply arrives, mirroring the real gating.
 //! - `error`: answers `initialize`, `thread/start`, and `turn/start`, but
 //!   then emits an `error` notification instead of any item stream.
+//!
+//! Independently of the scenario, the plugin/marketplace family the Skill
+//! market tab speaks is served too: `plugin/list` and `plugin/read` describe
+//! one `pdf-tools@local-market` plugin, `plugin/install`/`plugin/uninstall`
+//! flip its installed state, `marketplace/add` acknowledges a source, and
+//! `skills/list` materializes the plugin's `pdf-split` skill while installed.
 
 use std::io::BufRead;
 use std::io::Write;
@@ -52,6 +58,9 @@ fn main() {
     // once the client's decision reply with the matching id arrives.
     let mut awaiting_decision = false;
     let mut account = MockAccount::Chatgpt;
+    // The Skill market's installed state; `skills/list` materializes the
+    // plugin's `pdf-split` skill while it is set.
+    let mut market_installed = false;
 
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
@@ -230,24 +239,30 @@ fn main() {
                 account = MockAccount::SignedOut;
                 write_frame(&mut stdout, serde_json::json!({"id": id, "result": {}}));
             }
-            "skills/list" => write_frame(
-                &mut stdout,
-                serde_json::json!({
-                    "id": id,
-                    "result": {
-                        "data": [
-                            {
-                                "cwd": "/tmp",
-                                "errors": [],
-                                "skills": [
-                                    skill_json("mock-skill", "The mock skill for tests", "user", true),
-                                    skill_json("off-skill", "A disabled mock skill", "repo", false),
-                                ]
-                            }
-                        ]
-                    }
-                }),
-            ),
+            "skills/list" => {
+                let mut skills = vec![
+                    skill_json("mock-skill", "The mock skill for tests", "user", true, None),
+                    skill_json("off-skill", "A disabled mock skill", "repo", false, None),
+                ];
+                if market_installed {
+                    skills.push(skill_json(
+                        "pdf-split",
+                        "Split a PDF into pages",
+                        "user",
+                        true,
+                        Some("pdf-tools@local-market"),
+                    ));
+                }
+                write_frame(
+                    &mut stdout,
+                    serde_json::json!({
+                        "id": id,
+                        "result": {
+                            "data": [{"cwd": "/tmp", "errors": [], "skills": skills}]
+                        }
+                    }),
+                );
+            }
             "skills/config/write" => {
                 // The GUI must select by name (or path) with a boolean
                 // target state; anything else is a wire-shape bug, so
@@ -274,6 +289,101 @@ fn main() {
                             "error": {
                                 "code": -32602,
                                 "message": "mock rejected the skills/config/write shape"
+                            }
+                        }),
+                    );
+                }
+            }
+            "plugin/list" => write_frame(
+                &mut stdout,
+                serde_json::json!({
+                    "id": id,
+                    "result": {
+                        "marketplaces": [{
+                            "name": "local-market",
+                            "path": "/tmp/codex-mock/marketplace.json",
+                            "interface": {"displayName": "本地市场"},
+                            "plugins": [plugin_summary(market_installed)]
+                        }],
+                        "marketplaceLoadErrors": [],
+                        "featuredPluginIds": []
+                    }
+                }),
+            ),
+            "plugin/read" => write_frame(
+                &mut stdout,
+                serde_json::json!({
+                    "id": id,
+                    "result": {"plugin": plugin_detail(market_installed)}
+                }),
+            ),
+            "plugin/install" => {
+                // The GUI must address the plugin by name plus one marketplace
+                // selector (a local path or the remote name).
+                let has_marketplace = message["params"]["marketplacePath"].is_string()
+                    || message["params"]["remoteMarketplaceName"].is_string();
+                let plugin_name = message["params"]["pluginName"].as_str();
+                if has_marketplace && plugin_name == Some("pdf-tools") {
+                    market_installed = true;
+                    write_frame(
+                        &mut stdout,
+                        serde_json::json!({
+                            "id": id,
+                            "result": {"authPolicy": "ON_USE", "appsNeedingAuth": []}
+                        }),
+                    );
+                } else {
+                    write_frame(
+                        &mut stdout,
+                        serde_json::json!({
+                            "id": id,
+                            "error": {
+                                "code": -32602,
+                                "message": "mock rejected the plugin/install shape"
+                            }
+                        }),
+                    );
+                }
+            }
+            "plugin/uninstall" => {
+                if message["params"]["pluginId"] == "pdf-tools@local-market" {
+                    market_installed = false;
+                    write_frame(&mut stdout, serde_json::json!({"id": id, "result": {}}));
+                } else {
+                    write_frame(
+                        &mut stdout,
+                        serde_json::json!({
+                            "id": id,
+                            "error": {
+                                "code": -32602,
+                                "message": "mock rejected the plugin/uninstall shape"
+                            }
+                        }),
+                    );
+                }
+            }
+            "marketplace/add" => {
+                let source = message["params"]["source"].as_str().unwrap_or_default();
+                if source.is_empty() {
+                    write_frame(
+                        &mut stdout,
+                        serde_json::json!({
+                            "id": id,
+                            "error": {
+                                "code": -32602,
+                                "message": "mock rejected the marketplace/add shape"
+                            }
+                        }),
+                    );
+                } else {
+                    write_frame(
+                        &mut stdout,
+                        serde_json::json!({
+                            "id": id,
+                            "result": {
+                                "marketplaceName": "local-market",
+                                "installedRoot": "/tmp/codex-mock/marketplaces/local-market",
+                                "alreadyAdded": false
                             }
                         }),
                     );
@@ -537,14 +647,100 @@ fn thread_json(id: &str, preview: &str) -> serde_json::Value {
 }
 
 /// A full `SkillMetadata` payload; every non-optional field is present.
-fn skill_json(name: &str, description: &str, scope: &str, enabled: bool) -> serde_json::Value {
+fn skill_json(
+    name: &str,
+    description: &str,
+    scope: &str,
+    enabled: bool,
+    plugin_id: Option<&str>,
+) -> serde_json::Value {
     serde_json::json!({
         "name": name,
         "description": description,
         "path": format!("/tmp/skills/{name}/SKILL.md"),
         "scope": scope,
         "enabled": enabled,
-        "pluginId": null
+        "pluginId": plugin_id
+    })
+}
+
+/// A full `PluginSummary` payload for the one mock market plugin.
+fn plugin_summary(installed: bool) -> serde_json::Value {
+    serde_json::json!({
+        "id": "pdf-tools@local-market",
+        "remotePluginId": null,
+        "name": "pdf-tools",
+        "shareContext": null,
+        "source": {"type": "local", "path": "/tmp/codex-mock/plugins/pdf-tools"},
+        "installed": installed,
+        "enabled": installed,
+        "installPolicy": "AVAILABLE",
+        "installPolicySource": null,
+        "authPolicy": "ON_USE",
+        "interface": plugin_interface(),
+        "keywords": []
+    })
+}
+
+/// A full `PluginDetail` payload; its skills are what the market row
+/// expands into.
+fn plugin_detail(installed: bool) -> serde_json::Value {
+    serde_json::json!({
+        "marketplaceName": "local-market",
+        "marketplacePath": "/tmp/codex-mock/marketplace.json",
+        "summary": plugin_summary(installed),
+        "shareUrl": null,
+        "description": "PDF utility skills",
+        "skills": [
+            {
+                "name": "pdf-split",
+                "description": "Split a PDF into pages",
+                "shortDescription": null,
+                "interface": null,
+                "path": null,
+                "enabled": true
+            },
+            {
+                "name": "pdf-merge",
+                "description": "Merge several PDFs into one",
+                "shortDescription": null,
+                "interface": null,
+                "path": null,
+                "enabled": true
+            }
+        ],
+        "onboardingSkill": null,
+        "hooks": [],
+        "apps": [],
+        "appTemplates": [],
+        "mcpServers": [],
+        "scheduledTasks": null
+    })
+}
+
+/// A full `PluginInterface` payload; every optional key is present because
+/// the v2 deserializer does not default them.
+fn plugin_interface() -> serde_json::Value {
+    serde_json::json!({
+        "displayName": "PDF 工具",
+        "shortDescription": "Split and merge PDF files",
+        "longDescription": null,
+        "developerName": null,
+        "category": null,
+        "capabilities": [],
+        "websiteUrl": null,
+        "privacyPolicyUrl": null,
+        "termsOfServiceUrl": null,
+        "defaultPrompt": null,
+        "brandColor": null,
+        "composerIcon": null,
+        "composerIconUrl": null,
+        "logo": null,
+        "logoDark": null,
+        "logoUrl": null,
+        "logoUrlDark": null,
+        "screenshots": [],
+        "screenshotUrls": []
     })
 }
 

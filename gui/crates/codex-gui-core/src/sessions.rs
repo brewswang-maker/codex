@@ -102,12 +102,18 @@ impl ThreadSummary {
     }
 }
 
-/// Lightweight resume outcome: the active thread id, its working directory,
-/// and the persisted turns to replay into a transcript. Projection keeps the
-/// fat [`ThreadResumeResponse`] out of the UI message enum.
+/// Lightweight resume outcome: the active thread id, the `(provider,
+/// model)` pair it is bound to, its working directory, and the persisted
+/// turns to replay into a transcript. Projection keeps the fat
+/// [`ThreadResumeResponse`] out of the UI message enum.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionHistory {
     pub thread_id: String,
+    /// The provider the thread's next turns route through.
+    pub model_provider: String,
+    /// The model the thread's next turns use; it can differ from the
+    /// configured default when the thread predates a config change.
+    pub model: String,
     pub cwd: String,
     pub turns: Vec<Turn>,
 }
@@ -117,6 +123,8 @@ impl SessionHistory {
     pub fn from_resume(response: &ThreadResumeResponse) -> Self {
         Self {
             thread_id: response.thread.id.clone(),
+            model_provider: response.model_provider.clone(),
+            model: response.model.clone(),
             cwd: response.cwd.to_string_lossy().into_owned(),
             turns: response.thread.turns.clone(),
         }

@@ -8,6 +8,9 @@ publish.workspace = true
 
 [dependencies]
 codex-app-server-protocol = { path = "../../../codex-rs/app-server-protocol" }
+# The plugin/marketplace RPC payloads address marketplaces by
+# `AbsolutePathBuf`; the protocol crate uses but does not re-export it.
+codex-utils-absolute-path = { path = "../../../codex-rs/utils/absolute-path" }
 codex-gui-bridge = { workspace = true }
 codex-gui-core = { workspace = true }
 iced = { workspace = true }
@@ -26,6 +29,9 @@ wgpu = ["iced/wgpu"]
 [dev-dependencies]
 # Headless view-interaction simulator (spec section 10, UI layer row).
 iced_test = "0.14"
+# Builds in-memory `Client` handles so update tests can exercise the
+# synchronous half of command paths without a live app-server.
+tokio = { workspace = true }
 tempfile = "3"
 # Snapshot coverage of the markdown streaming segmentation (spec section 10,
 # snapshot row).

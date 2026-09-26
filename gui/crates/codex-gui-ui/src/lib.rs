@@ -15,14 +15,19 @@ mod git_view;
 mod icons;
 mod menu_bar;
 mod message;
+mod model_menu;
 mod plan_view;
 mod quest_board;
 mod quest_launch;
 mod quest_overlays;
 mod quest_rows;
 mod quest_view;
+mod remote_view;
+mod requests_view;
+mod scm_view;
 mod sessions_view;
 mod settings_view;
+mod skills_view;
 mod state;
 mod status_notifications;
 mod theme;
@@ -200,6 +205,48 @@ pub fn subscription(state: &State) -> Subscription<Message> {
         })
     });
 
+    // Esc dismisses the multi-vendor model menu while it is open; the
+    // menu is raised and lowered from the status bar chip.
+    let model_menu_keys = state.model_menu_open.then(|| {
+        iced::event::listen_with(|event, _status, _window| match event {
+            Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                ..
+            }) => Some(Message::ModelMenuClosed),
+            _ => None,
+        })
+    });
+
+    // Esc closes the full-screen Skills page while it is up; the page also
+    // offers an explicit Close button.
+    let skills_page_keys = state.skills.page_open.then(|| {
+        iced::event::listen_with(|event, _status, _window| match event {
+            Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                ..
+            }) => Some(Message::SkillsPageToggled),
+            _ => None,
+        })
+    });
+
+    // While the mention popup is up, Up/Down move the highlight and Esc
+    // dismisses it; the composer input keeps the text keys.
+    let mention_keys = state.mentions.is_open().then(|| {
+        iced::event::listen_with(|event, _status, _window| match event {
+            Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                key: iced::keyboard::Key::Named(named),
+                modifiers,
+                ..
+            }) => match (named, modifiers.control()) {
+                (iced::keyboard::key::Named::ArrowUp, false) => Some(Message::MentionMoved(-1)),
+                (iced::keyboard::key::Named::ArrowDown, false) => Some(Message::MentionMoved(1)),
+                (iced::keyboard::key::Named::Escape, false) => Some(Message::MentionClosed),
+                _ => None,
+            },
+            _ => None,
+        })
+    });
+
     // Software-renderer pacing logs: first-frame latency, average frame
     // rate, and wheel-event timestamps feed the M4 performance notes.
     let perf_events = iced::event::listen_with(|event, _status, _window| perf::observe(&event));
@@ -216,6 +263,9 @@ pub fn subscription(state: &State) -> Subscription<Message> {
         search_toggle.unwrap_or_else(Subscription::none),
         search_keys.unwrap_or_else(Subscription::none),
         menu_keys.unwrap_or_else(Subscription::none),
+        model_menu_keys.unwrap_or_else(Subscription::none),
+        skills_page_keys.unwrap_or_else(Subscription::none),
+        mention_keys.unwrap_or_else(Subscription::none),
         perf_events,
     ])
 }

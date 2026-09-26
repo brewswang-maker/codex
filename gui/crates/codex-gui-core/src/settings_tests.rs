@@ -63,7 +63,7 @@ fn provider_preset_seeds_the_form_and_edits_aggregate_the_table() {
     settings.select_provider_preset("deepseek");
     assert_eq!(settings.provider.id, "deepseek");
     assert_eq!(settings.provider.base_url, "https://api.deepseek.com");
-    assert_eq!(settings.provider.model, "deepseek-v4-flash");
+    assert_eq!(settings.provider.model, "deepseek-flash");
 
     settings.set_field(SettingField::ProviderApiKey, "sk-test".to_string());
     assert_eq!(
@@ -78,7 +78,7 @@ fn provider_preset_seeds_the_form_and_edits_aggregate_the_table() {
                 })
             ),
             ("model_provider".to_string(), json!("deepseek")),
-            ("model".to_string(), json!("deepseek-v4-flash")),
+            ("model".to_string(), json!("deepseek-flash")),
         ]
     );
     // Provider saves need a fresh conversation thread.

@@ -14,9 +14,11 @@ fn board(rows: &[(&str, bool)]) -> SkillsBoard {
                 scope: SkillScope::User,
                 path: std::path::PathBuf::from(format!("/skills/{name}")),
                 enabled: *enabled,
+                plugin_id: None,
             })
             .collect(),
         picker_open: false,
+        ..SkillsBoard::default()
     }
 }
 

@@ -108,3 +108,20 @@ __pycache__/
 /gui/*.png
 /gui/*.xwd
 /gui/cargo-git-mirror.ini
+
+# GUI client scratch material (probe scripts, captured samples, skill build copies)
+/gui/probe_*.py
+/gui/fetch_*.py
+/gui/dump_pagedata.py
+/gui/dir_sample.json
+/gui/netlog*.json
+/gui/dom2.html
+/gui/reader-dom.html
+/gui/.fanqie-js/
+/gui/.fanqie-skill-build/
+/gui/.novel-skills-build/
+/gui/fulongzhang_dev/
+
+# Local scratch material at the repository root
+/.tmp_probe/
+/canvas-staging/

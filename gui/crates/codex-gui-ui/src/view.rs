@@ -13,18 +13,22 @@ use crate::icons::IconKind;
 use crate::menu_bar;
 use crate::message::AppMode;
 use crate::message::Message;
+use crate::model_menu;
 use crate::plan_view;
 use crate::quest_board;
 use crate::quest_launch;
 use crate::quest_overlays;
 use crate::quest_view;
+use crate::requests_view;
 use crate::sessions_view;
 use crate::settings_view;
+use crate::skills_view;
 use crate::state::State;
 use crate::state::Status;
 use crate::theme;
 use codex_gui_core::AccountBadge;
 use codex_gui_core::ErrorBanner;
+use codex_gui_core::localize_skill_description;
 use iced::Element;
 use iced::Fill;
 use iced::alignment;
@@ -32,7 +36,6 @@ use iced::widget::button;
 use iced::widget::column;
 use iced::widget::container;
 use iced::widget::image;
-use iced::widget::pick_list;
 use iced::widget::row;
 use iced::widget::scrollable;
 use iced::widget::text;
@@ -55,6 +58,10 @@ pub fn view(state: &State) -> Element<'_, Message> {
     if state.settings.open {
         // The settings panel replaces the whole chat surface while open.
         return settings_view::panel(state);
+    }
+    if state.skills.page_open {
+        // The Skills page likewise owns the whole surface while open.
+        return skills_view::page(state);
     }
 
     let main = conversation(state);
@@ -103,21 +110,27 @@ pub fn view(state: &State) -> Element<'_, Message> {
     };
 
     // Overlays stack from the palette upward: the Quest board and dialogs,
-    // git composer, plan review, diff viewer, and finally the always-on-top
-    // approval modal.
+    // git composer, plan review, diff viewer, request dialogs, and finally
+    // the always-on-top approval modal.
     approvals_view::layered(
         state,
-        diff_view::layered(
+        requests_view::layered(
             state,
-            plan_view::layered(
+            diff_view::layered(
                 state,
-                git_view::layered(
+                plan_view::layered(
                     state,
-                    quest_board::layered(
+                    git_view::layered(
                         state,
-                        quest_overlays::layered(
+                        quest_board::layered(
                             state,
-                            command_palette::layered(state, menu_bar::layered(state, window)),
+                            quest_overlays::layered(
+                                state,
+                                command_palette::layered(
+                                    state,
+                                    model_menu::layered(state, menu_bar::layered(state, window)),
+                                ),
+                            ),
                         ),
                     ),
                 ),
@@ -126,16 +139,30 @@ pub fn view(state: &State) -> Element<'_, Message> {
     )
 }
 
-/// The shared conversation column: transcript, optional pickers, composer.
+/// The shared conversation column: transcript, slots, composer.
+///
+/// The optional bars keep a constant slot even while hidden: iced pairs
+/// widget state by child position, so a changing child count would shift
+/// the composer to a fresh index mid-typing, rebuilding its `text_input`
+/// state and silently dropping the keyboard focus.
 fn conversation(state: &State) -> Element<'_, Message> {
-    let mut main = column![].push(chat::transcript_view(state));
-    if let Some(picker) = skill_picker(state) {
-        main = main.push(picker);
-    }
-    if let Some(bar) = chat::taskbar(state) {
-        main = main.push(bar);
-    }
-    main.push(composer(state)).height(Fill).into()
+    column![
+        chat::transcript_view(state),
+        slot(skill_picker(state)),
+        slot(mention_picker(state)),
+        slot(slash_picker(state)),
+        slot(chat::taskbar(state)),
+        composer(state),
+    ]
+    .height(Fill)
+    .into()
+}
+
+/// Wraps one optional bar above the composer so the child count never
+/// changes; a hidden bar collapses to a zero-height container.
+fn slot(bar: Option<Element<'_, Message>>) -> Element<'_, Message> {
+    let content = bar.unwrap_or_else(|| iced::widget::Space::new().height(0.0).into());
+    container(content).width(Fill).into()
 }
 
 /// The full-screen disconnect state with the one-click relaunch.
@@ -332,8 +359,9 @@ fn account_label(badge: &AccountBadge) -> String {
     }
 }
 
-/// The inline picker between transcript and composer while open: one
-/// button per enabled skill, inserting its `$name` mention.
+/// The inline picker between transcript and composer while open: one row
+/// per enabled skill with its Chinese one-liner, inserting its `$name`
+/// mention.
 fn skill_picker(state: &State) -> Option<Element<'_, Message>> {
     if !state.skills.picker_open {
         return None;
@@ -342,7 +370,7 @@ fn skill_picker(state: &State) -> Option<Element<'_, Message>> {
     let enabled: Vec<_> = state.skills.rows.iter().filter(|row| row.enabled).collect();
     if enabled.is_empty() {
         return Some(
-            container(text("no enabled skills").style(theme::dim))
+            container(text("没有已启用的 Skill").style(theme::dim))
                 .padding(8)
                 .width(Fill)
                 .into(),
@@ -351,24 +379,116 @@ fn skill_picker(state: &State) -> Option<Element<'_, Message>> {
 
     let mut options = column![].spacing(4);
     for skill in enabled {
-        options = options.push(
-            button(
-                text(format!("${}", skill.name))
+        let description = localize_skill_description(&skill.name, &skill.description);
+        let mut label = column![
+            text(format!("${}", skill.name))
+                .size(theme::SIZE_XS)
+                .style(theme::fg)
+        ]
+        .spacing(2)
+        .width(Fill);
+        if !description.is_empty() {
+            label = label.push(
+                text(description)
                     .size(theme::SIZE_XS)
-                    .style(theme::fg),
-            )
-            .padding([4, 10])
-            .style(theme::ghost_button)
-            .on_press(Message::SkillPicked(skill.name.clone())),
+                    .style(theme::dim)
+                    .width(Fill),
+            );
+        }
+        options = options.push(
+            button(label)
+                .width(Fill)
+                .padding([4, 10])
+                .style(theme::ghost_button)
+                .on_press(Message::SkillPicked(skill.name.clone())),
         );
     }
-    Some(scrollable(options).height(160).width(Fill).into())
+    Some(scrollable(options).height(240).width(Fill).into())
+}
+
+/// The `@` mention completion list between transcript and composer: one
+/// row per fuzzy match, the highlighted row on a panel surface.
+fn mention_picker(state: &State) -> Option<Element<'_, Message>> {
+    if !state.mentions.is_open() {
+        return None;
+    }
+    if state.mentions.hits().is_empty() {
+        return Some(
+            container(text("没有匹配的文件").style(theme::dim))
+                .padding(8)
+                .width(Fill)
+                .into(),
+        );
+    }
+
+    let mut options = column![].spacing(4);
+    for (index, hit) in state.mentions.hits().iter().enumerate() {
+        let selected = index == state.mentions.selected();
+        let label = row![
+            text(hit.file_name.clone())
+                .size(theme::SIZE_XS)
+                .style(theme::fg),
+            text(hit.path.clone())
+                .size(theme::SIZE_XS)
+                .style(theme::dim),
+        ]
+        .spacing(8)
+        .align_y(alignment::Vertical::Center)
+        .width(Fill);
+        options = options.push(
+            button(label)
+                .width(Fill)
+                .padding([4, 10])
+                .style(move |theme, status| {
+                    if selected {
+                        button::Style {
+                            background: Some(theme::PANEL.into()),
+                            text_color: theme::TEXT,
+                            ..theme::ghost_button(theme, status)
+                        }
+                    } else {
+                        theme::ghost_button(theme, status)
+                    }
+                })
+                .on_press(Message::MentionPicked(index)),
+        );
+    }
+    Some(scrollable(options).height(240).width(Fill).into())
+}
+
+/// The `/` command palette between transcript and composer while the
+/// composer holds a bare `/word`.
+fn slash_picker(state: &State) -> Option<Element<'_, Message>> {
+    let options = crate::commands::slash_options(&state.composer);
+    if options.is_empty() {
+        return None;
+    }
+
+    let mut list = column![].spacing(4);
+    for (command, hint) in options {
+        let label = row![
+            text(command).size(theme::SIZE_XS).style(theme::fg),
+            text(hint).size(theme::SIZE_XS).style(theme::dim),
+        ]
+        .spacing(8)
+        .align_y(alignment::Vertical::Center)
+        .width(Fill);
+        list = list.push(
+            button(label)
+                .width(Fill)
+                .padding([4, 10])
+                .style(theme::ghost_button)
+                .on_press(Message::SlashPicked(String::from(command))),
+        );
+    }
+    Some(container(list).width(Fill).into())
 }
 
 fn composer(state: &State) -> Element<'_, Message> {
     let can_submit = state.can_submit();
 
-    let input = text_input("Ask Codex…", &state.composer)
+    let input = text_input("Ask Codex…（@ 提及文件，/ 命令）", &state.composer)
+        .id(COMPOSER_INPUT_ID)
         .on_input(Message::ComposerChanged)
         .on_submit_maybe(can_submit.then_some(Message::Submit))
         .size(theme::SIZE_BODY)
@@ -392,14 +512,27 @@ fn composer(state: &State) -> Element<'_, Message> {
         .style(theme::ghost_button)
         .on_press(Message::SkillsPickerToggled);
 
+    // While a turn streams the primary action becomes a stop: it asks
+    // the server to interrupt the live turn.
+    let interrupting = matches!(state.status, Status::Thinking) && state.active_turn.is_some();
     let send = |enabled: bool| {
-        button(
-            container(Icon::new(IconKind::SendUp, theme::BG, 16.0).widget())
-                .align_x(alignment::Horizontal::Center),
-        )
-        .padding([6, 10])
-        .style(theme::primary_button)
-        .on_press_maybe(enabled.then_some(Message::Submit))
+        if interrupting {
+            button(
+                container(Icon::new(IconKind::Stop, theme::BG, 16.0).widget())
+                    .align_x(alignment::Horizontal::Center),
+            )
+            .padding([6, 10])
+            .style(stop_button)
+            .on_press(Message::TurnInterruptRequested)
+        } else {
+            button(
+                container(Icon::new(IconKind::SendUp, theme::BG, 16.0).widget())
+                    .align_x(alignment::Horizontal::Center),
+            )
+            .padding([6, 10])
+            .style(theme::primary_button)
+            .on_press_maybe(enabled.then_some(Message::Submit))
+        }
     };
 
     let mut card = column![input];
@@ -414,7 +547,7 @@ fn composer(state: &State) -> Element<'_, Message> {
             skills,
             attach,
             iced::widget::Space::new().width(Fill),
-            model_pick_list(state),
+            model_menu_button(state),
             send(can_submit),
         ]
         .spacing(8)
@@ -431,42 +564,43 @@ fn composer(state: &State) -> Element<'_, Message> {
 /// Reading-width cap shared with the transcript column.
 const CONTENT_WIDTH: f32 = 760.0;
 
+/// Widget id of the composer text input. Pickers hand the keyboard back
+/// through it: iced blurs a text input whenever a press lands outside its
+/// bounds, so a row click would otherwise swallow everything typed next.
+pub const COMPOSER_INPUT_ID: &str = "composer-input";
+
+/// The stop button while a turn streams: the danger-tinted primary action.
+fn stop_button(_theme: &iced::Theme, _status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(theme::DANGER.into()),
+        text_color: theme::BG,
+        border: iced::Border {
+            radius: theme::RADIUS_SM.into(),
+            ..iced::Border::default()
+        },
+        ..button::Style::default()
+    }
+}
+
 /// The chat panel's fixed width; the file preview takes the rest.
 const CHAT_PANEL_WIDTH: f32 = 420.0;
 
-/// The provider model dropdown; hidden until the catalog arrives.
-fn model_pick_list(state: &State) -> Element<'_, Message> {
-    let models: Vec<(String, String)> = state
-        .status_board
-        .models()
-        .iter()
-        .map(|model| (model.id.clone(), model.display_name.clone()))
-        .collect();
-    if models.is_empty() {
-        return iced::widget::Space::new().width(0).height(0).into();
-    }
-
-    let current = state
+/// The composer's model chip: shows the effective model and opens the
+/// multi-vendor menu.
+fn model_menu_button(state: &State) -> Element<'_, Message> {
+    let name = state
         .status_board
         .current_model()
-        .and_then(|id| {
-            models
-                .iter()
-                .find(|(model_id, _)| model_id == id)
-                .map(|(_, name)| name.clone())
-        })
-        .unwrap_or_else(|| models[0].1.clone());
-    let options: Vec<String> = models.iter().map(|(_, name)| name.clone()).collect();
-
-    pick_list(options, Some(current), move |picked| {
-        models
-            .iter()
-            .find(|(_, name)| name == &picked)
-            .map_or(Message::Noop, |(id, _)| Message::ModelSelected(id.clone()))
-    })
-    .text_size(theme::SIZE_SM)
+        .unwrap_or("model")
+        .to_string();
+    button(
+        text(format!("{name} ▾"))
+            .size(theme::SIZE_SM)
+            .style(theme::dim),
+    )
     .padding([4, 8])
-    .style(theme::pick_list)
+    .style(theme::ghost_button)
+    .on_press(Message::ModelMenuToggled)
     .into()
 }
 

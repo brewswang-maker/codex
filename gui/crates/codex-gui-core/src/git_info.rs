@@ -30,6 +30,16 @@ impl GitStatus {
     }
 }
 
+/// One entry of the recent-commit history feeding the source-control
+/// graph: abbreviated hash plus the subject line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GitCommit {
+    /// Abbreviated commit hash (`%h`), e.g. `e797cbb`.
+    pub hash: String,
+    /// The commit subject (`%s`), verbatim UTF-8.
+    pub subject: String,
+}
+
 /// The branch and working-tree changes of one repository.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GitInfo {
@@ -37,6 +47,8 @@ pub struct GitInfo {
     pub branch: Option<String>,
     /// Changed paths keyed for lookup, ordered for display.
     pub changes: BTreeMap<String, GitStatus>,
+    /// Recent commits, newest first; empty outside a repository.
+    pub commits: Vec<GitCommit>,
 }
 
 impl GitInfo {
@@ -45,6 +57,7 @@ impl GitInfo {
         Self {
             branch: branch_of(cwd),
             changes: changes_of(cwd),
+            commits: recent_commits(cwd),
         }
     }
 
@@ -114,11 +127,22 @@ impl GitInfo {
     }
 }
 
+/// Shells out to `git` inside `cwd`. Forcing `core.quotepath=false` is
+/// what keeps non-ASCII paths readable: the git default re-encodes them
+/// as quoted octal escapes (`"\346\226\207"`) on `status --porcelain`.
+fn git_command(cwd: &Path) -> Command {
+    let mut command = Command::new("git");
+    command
+        .arg("-c")
+        .arg("core.quotepath=false")
+        .current_dir(cwd);
+    command
+}
+
 /// `git rev-parse --abbrev-ref HEAD` inside `cwd`, if that is a repo.
 fn branch_of(cwd: &Path) -> Option<String> {
-    let output = Command::new("git")
+    let output = git_command(cwd)
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .current_dir(cwd)
         .output()
         .ok()?;
     output
@@ -128,13 +152,31 @@ fn branch_of(cwd: &Path) -> Option<String> {
         .filter(|branch| !branch.is_empty())
 }
 
-/// Parses `git status --porcelain` inside `cwd` into coarse per-path states.
-fn changes_of(cwd: &Path) -> BTreeMap<String, GitStatus> {
-    let Ok(output) = Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(cwd)
+/// The newest commits as `(hash, subject)` rows, newest first.
+fn recent_commits(cwd: &Path) -> Vec<GitCommit> {
+    let Ok(output) = git_command(cwd)
+        .args(["log", "-n", "20", "--pretty=format:%h\u{1f}%s"])
         .output()
     else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.split_once('\u{1f}'))
+        .map(|(hash, subject)| GitCommit {
+            hash: hash.to_string(),
+            subject: subject.to_string(),
+        })
+        .collect()
+}
+
+/// Parses `git status --porcelain` inside `cwd` into coarse per-path states.
+fn changes_of(cwd: &Path) -> BTreeMap<String, GitStatus> {
+    let Ok(output) = git_command(cwd).args(["status", "--porcelain"]).output() else {
         return BTreeMap::new();
     };
     if !output.status.success() {
@@ -149,7 +191,7 @@ fn changes_of(cwd: &Path) -> BTreeMap<String, GitStatus> {
             continue;
         }
         let (codes, path) = line.split_at(2);
-        let path = path.trim_start().to_string();
+        let path = decode_path(path.trim_start());
         if path.is_empty() {
             continue;
         }
@@ -159,6 +201,69 @@ fn changes_of(cwd: &Path) -> BTreeMap<String, GitStatus> {
         }
     }
     changes
+}
+
+/// Turns one porcelain path field into a display path. Rename rows carry
+/// `old -> new` and keep the destination; quoted paths hold C-style
+/// escapes (the `core.quotepath` fallback for special characters) that
+/// decode back into raw UTF-8.
+fn decode_path(field: &str) -> String {
+    // Rename rows split first, then each half sheds its quotes.
+    let field = field.rsplit_once(" -> ").map_or(field, |(_, new)| new);
+    let field = field.strip_prefix('"').unwrap_or(field);
+    let field = field.strip_suffix('"').unwrap_or(field);
+    unquote_escapes(field)
+}
+
+/// Decodes the C-style escapes git uses inside quoted paths: octal
+/// `\ooo` byte sequences plus the single-character escapes. Bytes are
+/// reassembled losslessly, so multi-byte UTF-8 survives intact.
+fn unquote_escapes(path: &str) -> String {
+    if !path.contains('\\') {
+        return path.to_string();
+    }
+
+    let mut bytes = Vec::with_capacity(path.len());
+    let mut chars = path.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            bytes.extend_from_slice(ch.encode_utf8(&mut [0; 4]).as_bytes());
+            continue;
+        }
+        match chars.next() {
+            Some('n') => bytes.push(b'\n'),
+            Some('t') => bytes.push(b'\t'),
+            Some('r') => bytes.push(b'\r'),
+            Some(escape @ ('a' | 'b' | 'f' | 'v' | '\\' | '"')) => {
+                bytes.push(match escape {
+                    'a' => 0x07,
+                    'b' => 0x08,
+                    'f' => 0x0c,
+                    'v' => 0x0b,
+                    '\\' => b'\\',
+                    _ => b'"',
+                });
+            }
+            Some(first @ ('0'..='7')) => {
+                let mut value = first.to_digit(8).unwrap_or(0);
+                for _ in 0..2 {
+                    match chars.clone().next() {
+                        Some(digit @ ('0'..='7')) => {
+                            value = value * 8 + digit.to_digit(8).unwrap_or(0);
+                            chars.next();
+                        }
+                        _ => break,
+                    }
+                }
+                bytes.push(value as u8);
+            }
+            Some(other) => {
+                bytes.extend_from_slice(other.encode_utf8(&mut [0; 4]).as_bytes());
+            }
+            None => bytes.push(b'\\'),
+        }
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 /// Collapses the two porcelain columns into the coarse display state.

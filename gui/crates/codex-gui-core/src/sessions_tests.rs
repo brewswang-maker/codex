@@ -123,6 +123,8 @@ fn session_history_projection_carries_id_and_turns() {
 
     let history = SessionHistory::from_resume(&resume);
     assert_eq!(history.thread_id, "thread-9");
+    assert_eq!(history.model_provider, "mock");
+    assert_eq!(history.model, "mock-model");
     assert_eq!(history.turns.len(), 0);
 }
 

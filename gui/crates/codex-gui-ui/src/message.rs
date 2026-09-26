@@ -1,7 +1,11 @@
 //! Messages flowing through the iced update loop.
 
 use codex_app_server_protocol::GetAccountResponse;
+use codex_app_server_protocol::McpServerElicitationAction;
+use codex_app_server_protocol::McpServerOauthLoginResponse;
 use codex_app_server_protocol::ModelListResponse;
+use codex_app_server_protocol::PluginListResponse;
+use codex_app_server_protocol::PluginReadResponse;
 use codex_app_server_protocol::SkillsListResponse;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_gui_bridge::Error;
@@ -10,6 +14,7 @@ use codex_gui_core::Decision;
 use codex_gui_core::GitInfo;
 use codex_gui_core::SessionHistory;
 use codex_gui_core::SettingField;
+use codex_gui_core::SkillsTab;
 use iced::widget::markdown;
 use iced_swdir_tree::DirectoryTreeEvent;
 use serde_json::Value;
@@ -43,6 +48,15 @@ pub enum AppMode {
     Editor,
     /// Quest mode: quest list rail plus the task dialog.
     Quest,
+}
+
+/// Which native picker the Skills page's import button opens.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillImportTarget {
+    /// A whole skill directory holding a `SKILL.md`.
+    Directory,
+    /// A single `SKILL.md`-shaped file.
+    File,
 }
 
 /// The scenario picked when starting a Quest; the launch template seeds
@@ -191,18 +205,73 @@ pub enum Message {
         request_id: String,
         decision: Decision,
     },
+    /// The user picked one option row of a question in the input dialog.
+    QuestionOptionPicked {
+        /// The question's wire id.
+        question_id: String,
+        /// Row index into the option list (including the free-choice row).
+        index: usize,
+    },
+    /// The notes draft of one question changed.
+    QuestionNotesChanged {
+        /// The question's wire id.
+        question_id: String,
+        notes: String,
+    },
+    /// The user submitted the input dialog; every question answers at once.
+    QuestionAnswered,
+    /// One elicitation text/number field changed.
+    ElicitationFieldTextChanged {
+        /// The schema property key.
+        key: String,
+        text: String,
+    },
+    /// One elicitation boolean field was toggled.
+    ElicitationFieldToggled {
+        /// The schema property key.
+        key: String,
+    },
+    /// One elicitation single-select value was picked.
+    ElicitationFieldPicked {
+        /// The schema property key.
+        key: String,
+        /// The picked wire value.
+        value: String,
+    },
+    /// One elicitation multi-select value was toggled.
+    ElicitationFieldValueToggled {
+        /// The schema property key.
+        key: String,
+        /// The toggled wire value.
+        value: String,
+    },
+    /// The user answered the elicitation dialog (accept/decline/cancel).
+    ElicitationAnswered(McpServerElicitationAction),
+    /// Copies one elicitation URL (or verification challenge) to the
+    /// clipboard so the user can open it in a browser.
+    ElicitationLinkCopied(String),
     /// A `thread/list` page arrived for the sidebar.
     SessionsLoaded(Result<ThreadListResponse, Error>),
     /// The user picked a thread in the sidebar to resume.
     SessionSelected(String),
     /// `thread/resume` finished; success carries the history to replay.
     SessionResumed(Result<SessionHistory, Error>),
+    /// An in-place model switch (`thread/settings/update`) settled; the
+    /// error side carries why the running thread kept its model.
+    ModelAppliedInPlace(Result<Value, Error>),
+    /// A cross-vendor model switch forked the running thread onto the new
+    /// provider; `Ok` carries the fork's thread id to reopen.
+    ModelSwitchForked(Result<String, Error>),
     /// The user asked to archive one thread.
     SessionArchived(String),
+    /// The user asked to restore one archived thread.
+    SessionUnarchived(String),
+    /// The user expanded or collapsed the archived section.
+    ArchivedToggled,
+    /// A `thread/list` page arrived for the archived partition.
+    ArchivedSessionsLoaded(Result<ThreadListResponse, Error>),
     /// A `model/list` page arrived for the status-bar picker.
     ModelsLoaded(Result<ModelListResponse, Error>),
-    /// The user picked a model by catalog id.
-    ModelSelected(String),
     /// An `account/read` response arrived for the login badge.
     AccountLoaded(Result<GetAccountResponse, Error>),
     /// The user toggled the settings panel; opening triggers a config read.
@@ -243,6 +312,76 @@ pub enum Message {
         name: String,
         result: Result<Value, Error>,
     },
+    /// The user opened or closed the full-screen Skills page.
+    SkillsPageToggled,
+    /// The user picked a half of the Skills page.
+    SkillsTabPicked(SkillsTab),
+    /// The user opened the add form.
+    SkillAddOpened,
+    /// The add form's name draft changed.
+    SkillAddNameChanged(String),
+    /// The add form's description draft changed.
+    SkillAddDescriptionChanged(String),
+    /// The add form's Git link draft changed.
+    SkillAddLinkChanged(String),
+    /// The user asked for the native import picker.
+    SkillAddImportRequested(SkillImportTarget),
+    /// The native import picker returned; `None` means it was cancelled.
+    SkillAddSourcePicked(Option<PathBuf>),
+    /// The user asked to create or import the drafted skill.
+    SkillAddSubmitted,
+    /// The user cancelled the add form.
+    SkillAddCancelled,
+    /// The user opened the edit form for one row.
+    SkillEditOpened(String),
+    /// The edit form's name draft changed.
+    SkillEditNameChanged(String),
+    /// The edit form's description draft changed.
+    SkillEditDescriptionChanged(String),
+    /// The user confirmed the edits.
+    SkillEditSubmitted,
+    /// The user cancelled the edit form.
+    SkillEditCancelled,
+    /// The user pressed one row's delete button; arms the confirmation.
+    SkillDeleteArmed(String),
+    /// The user dismissed the delete confirmation.
+    SkillDeleteCancelled,
+    /// The user confirmed removing one skill.
+    SkillDeleteConfirmed(String),
+    /// A skill disk mutation settled; `Ok` carries the success text.
+    SkillMutationSettled(Result<String, String>),
+    /// A `plugin/list` response arrived for the market tab.
+    SkillMarketLoaded(Result<PluginListResponse, Error>),
+    /// The user expanded or collapsed one market plugin's detail.
+    SkillMarketPluginToggled(String),
+    /// A `plugin/read` response arrived for the expanded plugin.
+    SkillMarketDetailLoaded(Result<PluginReadResponse, Error>),
+    /// The user asked to install one market plugin.
+    SkillMarketInstallRequested(String),
+    /// The user asked to uninstall one plugin.
+    SkillUninstallRequested(String),
+    /// A `plugin/install` settled; `Ok` carries the auth policy notice.
+    SkillInstalled {
+        /// The `name@marketplace` id the install targeted.
+        id: String,
+        /// The call outcome.
+        result: Result<Value, Error>,
+    },
+    /// A `plugin/uninstall` settled.
+    SkillUninstalled {
+        /// The `name@marketplace` id the uninstall targeted.
+        id: String,
+        /// The call outcome.
+        result: Result<Value, Error>,
+    },
+    /// The marketplace-source draft changed.
+    SkillMarketSourceChanged(String),
+    /// The user asked to add the drafted marketplace source.
+    SkillMarketSourceSubmitted,
+    /// A `marketplace/add` settled.
+    SkillMarketSourceAdded(Result<Value, Error>),
+    /// The user asked to refresh the market catalog.
+    SkillMarketRefreshRequested,
     /// The user dismissed the error banner.
     ErrorDismissed,
     /// A file drag moved over the window.
@@ -323,6 +462,17 @@ pub enum Message {
     Noop,
     /// The user opened or closed the command palette (Ctrl+Shift+P).
     PaletteToggled,
+    /// The user opened or closed the multi-vendor model menu.
+    ModelMenuToggled,
+    /// The model menu was dismissed without a pick (Esc or mask click).
+    ModelMenuClosed,
+    /// The user picked a model row inside the vendor menu.
+    VendorModelPicked {
+        /// The provider key written as `model_provider`.
+        provider_id: String,
+        /// The model id written as `model`.
+        slug: String,
+    },
     /// The user asked for a fresh conversation thread.
     NewThreadRequested,
     /// The palette query text changed.
@@ -333,6 +483,18 @@ pub enum Message {
     PaletteConfirmed,
     /// A git probe finished for the working directory.
     GitInfoArrived(GitInfo),
+    /// The workspace search query changed (filters the directory tree).
+    SearchQueryChanged(String),
+    /// The workspace replace-with draft text changed.
+    SearchReplaceChanged(String),
+    /// The extension-marketplace filter text changed.
+    ExtensionFilterChanged(String),
+    /// A remote-explorer probe finished: SSH host aliases plus whether a
+    /// working Docker daemon answered (`None` when it could not run).
+    RemoteInfoArrived {
+        targets: Vec<String>,
+        docker_available: Option<bool>,
+    },
     /// The user opened the transcript search bar (Ctrl+F).
     ChatSearchOpened,
     /// The user closed the transcript search bar.
@@ -413,4 +575,48 @@ pub enum Message {
     ComposerCleared,
     /// The user asked for a fresh git probe from the Run menu.
     GitRefreshRequested,
+    /// The user asked to interrupt the streaming turn (the stop button).
+    TurnInterruptRequested,
+    /// The `turn/interrupt` RPC settled.
+    TurnInterrupted(Result<Value, Error>),
+    /// An `@` mention search page arrived; the echoed query guards against
+    /// stale pages that resolve after the token changed.
+    MentionSearchLoaded {
+        /// The query the page was searched for.
+        query: String,
+        /// The call outcome.
+        result: Result<codex_app_server_protocol::FuzzyFileSearchResponse, Error>,
+    },
+    /// The user clicked one mention row.
+    MentionPicked(usize),
+    /// The user stepped the mention highlight (`delta` is +1/-1).
+    MentionMoved(i32),
+    /// The user dismissed the mention popup (Esc).
+    MentionClosed,
+    /// The user expanded or collapsed one reasoning card.
+    ReasoningToggled(String),
+    /// The user expanded or collapsed one MCP call card.
+    McpCardToggled(String),
+    /// A `mcpServerStatus/list` page arrived for the settings panel.
+    McpServersLoaded(Result<codex_app_server_protocol::ListMcpServerStatusResponse, Error>),
+    /// The user asked to start the OAuth login for one MCP server.
+    McpLoginRequested(String),
+    /// A `mcpServer/oauth/login` call settled; `Ok` carries the URL the
+    /// user must open to finish signing in.
+    McpLoginStarted {
+        /// The MCP server the login targets.
+        name: String,
+        /// The sign-in URL, or why the login could not start.
+        result: Result<McpServerOauthLoginResponse, Error>,
+    },
+    /// The user asked to copy the pending sign-in link.
+    McpLoginLinkCopied,
+    /// The user dismissed the pending sign-in banner.
+    McpLoginDismissed,
+    /// A `review/start` call settled.
+    ReviewStarted(Result<Value, Error>),
+    /// A `thread/compact/start` call settled.
+    CompactionStarted(Result<Value, Error>),
+    /// The user clicked one `/` command row; the payload is the command.
+    SlashPicked(String),
 }

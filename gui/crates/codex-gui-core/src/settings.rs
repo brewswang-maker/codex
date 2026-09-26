@@ -114,7 +114,11 @@ pub struct VendorPreset {
 /// OpenAI-Responses endpoints (Kimi: `platform.kimi.com` API overview and
 /// the Kimi Code docs; GLM: `docs.bigmodel.cn` coding-plan Codex guide;
 /// Qwen: Aliyun Model Studio Responses compatibility guide; Doubao:
-/// Volcengine Ark Responses docs). Plan types without an official
+/// Volcengine Ark Responses docs; DeepSeek: the `api-docs.deepseek.com`
+/// Responses guide). Suggested models track each vendor's current catalog
+/// (the GLM-5.3 tier per the `docs.bigmodel.cn` model overview; DeepSeek
+/// `deepseek-flash`/`deepseek-v4-pro` per its Codex integration guide;
+/// Doubao's recommended Ark snapshot). Plan types without an official
 /// Responses endpoint — Qwen's Token and Coding plans are
 /// Chat/Completions-only — are not listed.
 pub const PROVIDER_PRESETS: &[VendorPreset] = &[
@@ -131,11 +135,20 @@ pub const PROVIDER_PRESETS: &[VendorPreset] = &[
     VendorPreset {
         id: "deepseek",
         name: "DeepSeek",
-        entries: &[PlanEntry {
-            billing: Billing::PayAsYouGo,
-            base_url: "https://api.deepseek.com",
-            model: "deepseek-v4-flash",
-        }],
+        entries: &[
+            // Current ids per the official Codex integration guide; the
+            // legacy `deepseek-v4-flash` name is offline and off the list.
+            PlanEntry {
+                billing: Billing::PayAsYouGo,
+                base_url: "https://api.deepseek.com",
+                model: "deepseek-flash",
+            },
+            PlanEntry {
+                billing: Billing::PayAsYouGo,
+                base_url: "https://api.deepseek.com",
+                model: "deepseek-v4-pro",
+            },
+        ],
     },
     VendorPreset {
         id: "glm",
@@ -146,12 +159,29 @@ pub const PROVIDER_PRESETS: &[VendorPreset] = &[
                 base_url: "https://open.bigmodel.cn/api/v1",
                 model: "glm-5.3",
             },
+            PlanEntry {
+                billing: Billing::PayAsYouGo,
+                base_url: "https://open.bigmodel.cn/api/v1",
+                model: "glm-5.3-flash",
+            },
+            PlanEntry {
+                billing: Billing::PayAsYouGo,
+                base_url: "https://open.bigmodel.cn/api/v1",
+                model: "glm-5.3-flashx",
+            },
             // Official Codex design (docs.bigmodel.cn): both plans speak
             // Responses on this one endpoint; the plan only changes the key.
             PlanEntry {
                 billing: Billing::CodingPlan,
                 base_url: "https://open.bigmodel.cn/api/v1",
                 model: "glm-5.3",
+            },
+            // The coding plan also carries GLM-5.3-Flash (triple quota);
+            // FlashX stays pay-as-you-go.
+            PlanEntry {
+                billing: Billing::CodingPlan,
+                base_url: "https://open.bigmodel.cn/api/v1",
+                model: "glm-5.3-flash",
             },
         ],
     },
@@ -163,6 +193,12 @@ pub const PROVIDER_PRESETS: &[VendorPreset] = &[
                 billing: Billing::PayAsYouGo,
                 base_url: "https://api.moonshot.cn/v1",
                 model: "kimi-k3",
+            },
+            // The official coding pick of the K2.7 tier.
+            PlanEntry {
+                billing: Billing::PayAsYouGo,
+                base_url: "https://api.moonshot.cn/v1",
+                model: "kimi-k2.7-code-highspeed",
             },
             PlanEntry {
                 billing: Billing::CodingPlan,
@@ -186,7 +222,7 @@ pub const PROVIDER_PRESETS: &[VendorPreset] = &[
         entries: &[PlanEntry {
             billing: Billing::PayAsYouGo,
             base_url: "https://ark.cn-beijing.volces.com/api/v3",
-            model: "doubao-seed-2-1-pro-260628",
+            model: "doubao-seed-2-1-pro-260915",
         }],
     },
 ];

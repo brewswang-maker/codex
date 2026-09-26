@@ -1,4 +1,5 @@
 //! Unit coverage of the chat-pane helpers (relative timestamps, durations).
+#![allow(clippy::expect_used, clippy::panic)]
 
 use super::fmt_tokens;
 use super::format_duration;
@@ -133,13 +134,14 @@ fn step_search_hit_wraps_in_both_directions() {
 }
 
 #[test]
-fn agent_message_closes_turn_marks_only_the_last_before_user() {
-    use super::agent_message_closes_turn;
+fn only_the_latest_agent_message_renders_the_action_bar() {
+    use super::agent_message_is_latest;
     use codex_gui_core::Entry;
 
-    // Turn 1 streams two agent segments around a command run; turn 2 has
-    // one. Only a2 (before the next user message) and a3 (tail) close
-    // their turns; a1 is an interior streaming segment.
+    // Turn 1 streams two segments around a command run, then the user
+    // steers mid-task (u2) and the model replies once more. Only the
+    // final reply renders the action bar: neither the earlier streaming
+    // segments nor the pre-steer reply may become end-of-task markers.
     let entries = vec![
         Entry::UserMessage {
             id: String::from("u1"),
@@ -170,16 +172,21 @@ fn agent_message_closes_turn_marks_only_the_last_before_user() {
             id: String::from("a3"),
             text: String::new(),
         },
+        Entry::AgentMessage {
+            id: String::from("a4"),
+            text: String::new(),
+        },
     ];
 
-    assert!(!agent_message_closes_turn(&entries, 1), "interior segment");
-    assert!(agent_message_closes_turn(&entries, 3), "closes turn 1");
-    assert!(agent_message_closes_turn(&entries, 5), "transcript tail");
+    assert!(!agent_message_is_latest(&entries, 1), "pre-command segment");
+    assert!(!agent_message_is_latest(&entries, 3), "pre-steer reply");
+    assert!(!agent_message_is_latest(&entries, 5), "steered segment");
+    assert!(agent_message_is_latest(&entries, 6), "final reply");
 }
 
 #[test]
-fn agent_message_closes_turn_on_the_live_streaming_tail() {
-    use super::agent_message_closes_turn;
+fn agent_message_is_latest_on_the_live_streaming_tail() {
+    use super::agent_message_is_latest;
     use codex_gui_core::Entry;
 
     // The latest turn is still streaming: its in-flight message is the
@@ -200,6 +207,6 @@ fn agent_message_closes_turn_on_the_live_streaming_tail() {
         },
     ];
 
-    assert!(!agent_message_closes_turn(&entries, 1));
-    assert!(agent_message_closes_turn(&entries, 2));
+    assert!(!agent_message_is_latest(&entries, 1));
+    assert!(agent_message_is_latest(&entries, 2));
 }

@@ -21,6 +21,12 @@ pub enum SearchField {
     Output,
     /// The changed-file paths of a file-change card.
     FilePath,
+    /// The visible reasoning body of a reasoning card.
+    ReasoningText,
+    /// The `server/tool` label of an MCP call card.
+    McpTool,
+    /// The text of a system note divider.
+    NoticeText,
 }
 
 /// One match: which entry matched, in which field, shown as a snippet with
@@ -86,6 +92,14 @@ fn first_hit(entry_index: usize, entry: &Entry, needle: &str) -> Option<SearchHi
                 .join("\n");
             (id, vec![(SearchField::FilePath, paths)])
         }
+        Entry::Reasoning { id, .. } => (
+            id,
+            vec![(SearchField::ReasoningText, entry.reasoning_text())],
+        ),
+        Entry::McpToolCall {
+            id, server, tool, ..
+        } => (id, vec![(SearchField::McpTool, format!("{server}/{tool}"))]),
+        Entry::SystemNote { id, text } => (id, vec![(SearchField::NoticeText, text.clone())]),
     };
 
     fields

@@ -4,6 +4,8 @@
 use crate::message::Message;
 use crate::state::State;
 use crate::theme::dim;
+use codex_app_server_protocol::McpAuthStatus;
+use codex_app_server_protocol::McpServerConnectionStatus;
 use codex_app_server_protocol::SkillScope;
 use codex_gui_core::PROVIDER_PRESETS;
 use codex_gui_core::SettingField;
@@ -17,6 +19,7 @@ use iced::widget::checkbox;
 use iced::widget::column;
 use iced::widget::pick_list;
 use iced::widget::row;
+use iced::widget::scrollable;
 use iced::widget::text;
 use iced::widget::text_input;
 
@@ -63,6 +66,14 @@ pub fn panel(state: &State) -> Element<'_, Message> {
         panel = panel.push(skill_row);
     }
 
+    panel = panel.push(text("MCP servers").size(14));
+    for mcp_row in mcp_rows(state) {
+        panel = panel.push(mcp_row);
+    }
+    if let Some(banner) = mcp_login_banner(state) {
+        panel = panel.push(banner);
+    }
+
     if let Some(notice) = &state.settings.notice {
         panel = panel.push(text(notice.clone()));
     }
@@ -72,7 +83,7 @@ pub fn panel(state: &State) -> Element<'_, Message> {
             .on_press(Message::SettingsSave),
     );
 
-    panel.into()
+    scrollable(panel).width(Fill).height(Fill).into()
 }
 
 /// The signed-in badge plus the sign-out action.
@@ -223,6 +234,97 @@ fn scope_label(scope: SkillScope) -> &'static str {
         SkillScope::Repo => "repo",
         SkillScope::System => "system",
         SkillScope::Admin => "admin",
+    }
+}
+
+/// The MCP inventory rows (name, connection state, auth state, tool
+/// count) plus the sign-in action for servers stuck on authentication;
+/// the list loads when the panel opens.
+fn mcp_rows(state: &State) -> Vec<Element<'_, Message>> {
+    if !state.mcp_loaded {
+        return vec![text("loading…").style(dim).into()];
+    }
+    if state.mcp_servers.is_empty() {
+        return vec![text("no MCP servers configured").style(dim).into()];
+    }
+    state
+        .mcp_servers
+        .iter()
+        .map(|server| {
+            let needs_login = matches!(server.auth_status, McpAuthStatus::NotLoggedIn)
+                || matches!(
+                    server.runtime_status.as_ref(),
+                    Some(McpServerConnectionStatus::AuthenticationRequired)
+                );
+            let mut line = row![
+                text(server.name.clone()).width(160),
+                text(mcp_connection_label(server.runtime_status.as_ref()))
+                    .style(dim)
+                    .width(120),
+                text(mcp_auth_label(&server.auth_status))
+                    .style(dim)
+                    .width(90),
+                text(format!("{} tools", server.tools.len()))
+                    .style(dim)
+                    .width(Fill),
+            ]
+            .spacing(12);
+            if needs_login {
+                line = line.push(
+                    button(text("sign in"))
+                        .on_press(Message::McpLoginRequested(server.name.clone())),
+                );
+            }
+            line.into()
+        })
+        .collect()
+}
+
+/// The pending OAuth banner: the authorization URL, a copy action, and a
+/// dismiss action; it clears itself once the login-completed
+/// notification arrives.
+fn mcp_login_banner(state: &State) -> Option<Element<'_, Message>> {
+    let login = state.mcp_login.as_ref()?;
+    Some(
+        column![
+            text(format!(
+                "sign in to {}: open this link in a browser",
+                login.name
+            )),
+            text(login.url.clone()).style(dim),
+            row![
+                button(text("copy link")).on_press(Message::McpLoginLinkCopied),
+                button(text("dismiss")).on_press(Message::McpLoginDismissed),
+            ]
+            .spacing(8),
+        ]
+        .spacing(6)
+        .into(),
+    )
+}
+
+/// The MCP connection state as a display label.
+fn mcp_connection_label(status: Option<&McpServerConnectionStatus>) -> &'static str {
+    match status {
+        Some(McpServerConnectionStatus::Connected) => "connected",
+        Some(McpServerConnectionStatus::Starting) => "starting…",
+        Some(McpServerConnectionStatus::NotStarted) => "not started",
+        Some(McpServerConnectionStatus::AuthenticationRequired) => "auth required",
+        Some(McpServerConnectionStatus::Failed) => "failed",
+        Some(McpServerConnectionStatus::Cancelled) => "cancelled",
+        Some(McpServerConnectionStatus::Disabled) => "disabled",
+        None => "…",
+    }
+}
+
+/// The MCP auth state as a display label.
+fn mcp_auth_label(status: &McpAuthStatus) -> &'static str {
+    match status {
+        McpAuthStatus::Unknown => "…",
+        McpAuthStatus::Unsupported => "-",
+        McpAuthStatus::NotLoggedIn => "not logged in",
+        McpAuthStatus::BearerToken => "bearer token",
+        McpAuthStatus::OAuth => "oauth",
     }
 }
 

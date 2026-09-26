@@ -104,7 +104,15 @@ fn full_body(state: &State) -> iced::widget::Column<'_, Message> {
     for row in transcript_rows(entries) {
         match row {
             TranscriptRow::Entry(index) => {
-                body = body.push(render_entry(state, &entries[index], index, now));
+                let entry = &entries[index];
+                // A reasoning item that never carried text renders nothing;
+                // its snapshot can also arrive empty after a replay.
+                if let Entry::Reasoning { .. } = entry
+                    && entry.reasoning_text().is_empty()
+                {
+                    continue;
+                }
+                body = body.push(render_entry(state, entry, index, now));
             }
             TranscriptRow::Group(start, end) => {
                 body = body.push(command_group_card(state, start, end));
@@ -276,22 +284,15 @@ fn transcript_rows(entries: &[Entry]) -> Vec<TranscriptRow> {
     rows
 }
 
-/// Whether the agent message at `index` closes its turn: it is the last
-/// agent message before the next user message (or the end of the
-/// transcript). Only the closer renders the copy/react action bar -- one
-/// end-of-task marker per turn, not one per streaming segment.
-fn agent_message_closes_turn(entries: &[Entry], index: usize) -> bool {
-    for entry in &entries[index + 1..] {
-        match entry {
-            // A new user turn starts: this message closed its turn.
-            Entry::UserMessage { .. } => return true,
-            // A later agent message in the same turn: not the closer.
-            Entry::AgentMessage { .. } => return false,
-            Entry::CommandExecution { .. } | Entry::FileChange { .. } => {}
-        }
-    }
-    // Transcript tail: the live (or latest) turn's closing message.
-    true
+/// Whether the agent message at `index` is the transcript's latest one.
+/// Only it renders the copy/react action bar, so a task carries exactly
+/// one end-of-task marker -- on its final reply. Mid-task user steers
+/// must not promote earlier replies to closing markers, which is why
+/// user messages, commands, and file changes are all skipped here.
+fn agent_message_is_latest(entries: &[Entry], index: usize) -> bool {
+    !entries[index + 1..]
+        .iter()
+        .any(|entry| matches!(entry, Entry::AgentMessage { .. }))
 }
 
 /// One collapsed run of finished command cards: a summary header that
@@ -515,7 +516,7 @@ fn render_entry<'a>(
             state,
             id,
             text,
-            agent_message_closes_turn(state.transcript.entries(), index),
+            agent_message_is_latest(state.transcript.entries(), index),
         ),
         Entry::CommandExecution {
             id,
@@ -525,6 +526,30 @@ fn render_entry<'a>(
             duration_ms,
         } => command_card(state, id, command, output, *exit_code, *duration_ms),
         Entry::FileChange { changes, .. } => file_change_card(changes),
+        Entry::Reasoning { id, .. } => reasoning_card(state, id, &entry.reasoning_text()),
+        Entry::McpToolCall {
+            id,
+            server,
+            tool,
+            status,
+            arguments,
+            result,
+            error,
+            duration_ms,
+        } => mcp_card(
+            state,
+            McpCallCard {
+                id,
+                server,
+                tool,
+                status,
+                arguments,
+                result: result.as_deref(),
+                error: error.as_deref(),
+                duration_ms: *duration_ms,
+            },
+        ),
+        Entry::SystemNote { text, .. } => system_note(text),
     }
 }
 
@@ -753,6 +778,168 @@ fn command_card<'a>(
         .padding([8, 12])
         .style(command_card_style)
         .into()
+}
+
+/// One reasoning item: the model's visible thinking behind a header that
+/// expands by default; the collapsed state keeps a one-line preview.
+fn reasoning_card<'a>(state: &'a State, id: &str, body: &str) -> Element<'a, Message> {
+    let collapsed = state.collapsed_reasoning.contains(id);
+    let marker = if collapsed { "▸" } else { "▾" };
+    let header_label = if collapsed {
+        let first = body
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or_default()
+            .trim();
+        let preview: String = first.chars().take(80).collect();
+        let ellipsis = if first.chars().count() > 80 {
+            "…"
+        } else {
+            ""
+        };
+        format!("{marker} 思考过程 · {preview}{ellipsis}")
+    } else {
+        format!("{marker} 思考过程")
+    };
+
+    let mut card = column![
+        button(text(header_label).size(theme::SIZE_SM).style(theme::dim))
+            .padding([2, 4])
+            .style(theme::ghost_button)
+            .on_press(Message::ReasoningToggled(String::from(id)))
+            .width(Fill)
+    ]
+    .spacing(4);
+
+    if !collapsed {
+        card = card.push(
+            container(
+                text(String::from(body))
+                    .size(theme::SIZE_SM)
+                    .style(theme::dim),
+            )
+            .padding([4, 8])
+            .style(output_well),
+        );
+    }
+
+    container(card)
+        .width(Fill)
+        .padding([8, 12])
+        .style(command_card_style)
+        .into()
+}
+
+/// Borrowed fields of one [`Entry::McpToolCall`] row for [`mcp_card`].
+struct McpCallCard<'a> {
+    id: &'a str,
+    server: &'a str,
+    tool: &'a str,
+    status: &'a str,
+    arguments: &'a str,
+    result: Option<&'a str>,
+    error: Option<&'a str>,
+    duration_ms: Option<i64>,
+}
+
+/// One MCP tool call: a header (`tool` on `server` plus a status chip)
+/// that expands into the JSON arguments and the result or error well.
+fn mcp_card<'a>(state: &'a State, card: McpCallCard<'_>) -> Element<'a, Message> {
+    let McpCallCard {
+        id,
+        server,
+        tool,
+        status,
+        arguments,
+        result,
+        error,
+        duration_ms,
+    } = card;
+    let status_color = match status {
+        "done" => theme::BRAND,
+        "failed" => theme::DANGER,
+        _ => theme::MUTED,
+    };
+    let mut status_label = String::from(status);
+    if let Some(ms) = duration_ms {
+        status_label.push_str(&format!(" · {}", format_duration(ms)));
+    }
+
+    let header = row![
+        text(format!("{tool} · {server}"))
+            .size(theme::SIZE_SM)
+            .style(theme::fg),
+        iced::widget::Space::new().width(Fill),
+        text(status_label)
+            .size(theme::SIZE_XS)
+            .style(move |_| iced::widget::text::Style {
+                color: Some(status_color),
+            }),
+    ]
+    .spacing(8)
+    .align_y(alignment::Vertical::Center);
+
+    let mut card = column![
+        button(header)
+            .padding([2, 4])
+            .style(theme::ghost_button)
+            .on_press(Message::McpCardToggled(String::from(id)))
+            .width(Fill)
+    ]
+    .spacing(4);
+
+    if state.expanded_mcp.contains(id) {
+        let mut well = column![
+            text("Arguments").size(theme::SIZE_XS).style(faint),
+            text(String::from(arguments))
+                .font(Font::MONOSPACE)
+                .size(theme::SIZE_XS)
+                .style(theme::dim),
+        ]
+        .spacing(4);
+        if let Some(error) = error {
+            well = well.push(text("Error").size(theme::SIZE_XS).style(faint));
+            well = well.push(
+                text(String::from(error))
+                    .size(theme::SIZE_XS)
+                    .style(move |_| iced::widget::text::Style {
+                        color: Some(theme::DANGER),
+                    }),
+            );
+        } else if let Some(result) = result {
+            well = well.push(text("Result").size(theme::SIZE_XS).style(faint));
+            well = well.push(
+                scrollable(
+                    text(String::from(result))
+                        .font(Font::MONOSPACE)
+                        .size(theme::SIZE_XS)
+                        .style(theme::dim),
+                )
+                .height(180)
+                .width(Fill),
+            );
+        }
+        card = card.push(container(well).padding([4, 8]).style(output_well));
+    }
+
+    container(card)
+        .width(Fill)
+        .padding([8, 12])
+        .style(command_card_style)
+        .into()
+}
+
+/// One system note: a centered faint line acknowledging a lifecycle event
+/// (context compaction, review-mode boundaries).
+fn system_note(note: &str) -> Element<'static, Message> {
+    container(row![
+        iced::widget::Space::new().width(Fill),
+        text(String::from(note)).size(theme::SIZE_XS).style(faint),
+        iced::widget::Space::new().width(Fill),
+    ])
+    .width(Fill)
+    .padding([2, 0])
+    .into()
 }
 
 /// The output well: white surface with a hairline border.

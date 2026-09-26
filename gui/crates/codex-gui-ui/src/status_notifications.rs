@@ -1,10 +1,11 @@
 //! Projects status-bearing notifications onto the [`StatusBoard`].
 //!
 //! Spec section 9: `account/updated`, `model/rerouted`, and
-//! `model/verification` feed the status bar; `warning`,
-//! `modelProvider/authRecovery*`, and `deprecationNotice` surface as the
-//! dismissible banner; the experimental guardian auto-review notifications
-//! are display-only.
+//! `model/verification` feed the status bar; `warning`, `guardianWarning`,
+//! `configWarning`, `modelProvider/authRecovery*`, and `deprecationNotice`
+//! surface as the dismissible banner; a `thread/settings/updated` for the
+//! displayed thread re-syncs the model label; the experimental guardian
+//! auto-review notifications are display-only.
 
 use crate::state::State;
 use codex_app_server_protocol::AuthMode;
@@ -37,6 +38,41 @@ pub fn apply(state: &mut State, notification: &ServerNotification) -> bool {
         }
         ServerNotification::Warning(warning) => {
             state.status_board.raise_banner(warning.message.clone());
+            true
+        }
+        ServerNotification::GuardianWarning(warning) => {
+            // The review pipeline also reports automatic approvals after the
+            // fact; mirror the TUI and keep those out of the banner.
+            if !warning
+                .message
+                .starts_with("Automatic approval review approved (")
+            {
+                state.status_board.raise_banner(warning.message.clone());
+            }
+            true
+        }
+        ServerNotification::ConfigWarning(warning) => {
+            let message = match &warning.details {
+                Some(details) => format!("{}: {details}", warning.summary),
+                None => warning.summary.clone(),
+            };
+            state.status_board.raise_banner(message);
+            true
+        }
+        ServerNotification::ThreadSettingsUpdated(updated) => {
+            // Only the displayed thread's effective settings drive the
+            // status bar; the notification also fires for background threads.
+            if state.thread_id.as_deref() == Some(updated.thread_id.as_str()) {
+                state
+                    .status_board
+                    .sync_model(&updated.thread_settings.model);
+                // The server reports the thread's own pair, so the binding
+                // tracks in-place model switches exactly.
+                state.active_binding = Some((
+                    updated.thread_settings.model_provider.clone(),
+                    updated.thread_settings.model.clone(),
+                ));
+            }
             true
         }
         ServerNotification::AuthRecoveryStarted(recovery) => {
