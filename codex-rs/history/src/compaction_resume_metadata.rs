@@ -24,6 +24,10 @@ pub struct CompactionResumeMetadata {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct PreviousTurnSettings {
     pub model: String,
+    /// Provider that served the previous turn. Absent in older rollouts; callers that route
+    /// request work (for example compaction) must fall back to the session's recorded provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_provider_id: Option<String>,
     /// Historical program for this model; absence must not inherit the next turn's selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cyber_access_program: Option<CyberAccessProgram>,

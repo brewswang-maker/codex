@@ -109,6 +109,7 @@ pub(crate) async fn build_compaction_initial_context(
 pub(crate) async fn run_inline_auto_compact_task(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
+    client_session: Option<&mut ModelClientSession>,
     initial_context_injection: InitialContextInjection,
     reason: CompactionReason,
     phase: CompactionPhase,
@@ -128,6 +129,7 @@ pub(crate) async fn run_inline_auto_compact_task(
     run_compact_task_inner(
         sess,
         turn_context,
+        client_session,
         input,
         initial_context_injection,
         CompactionTrigger::Auto,
@@ -147,6 +149,7 @@ pub(crate) async fn run_compact_task(
     run_compact_task_inner(
         sess.clone(),
         turn_context,
+        /*client_session*/ None,
         input,
         InitialContextInjection::DoNotInject,
         CompactionTrigger::Manual,
@@ -157,9 +160,13 @@ pub(crate) async fn run_compact_task(
     Ok(())
 }
 
+// Mirrors the entry-point signatures so the optional routed client session can flow through
+// without a one-off params wrapper.
+#[allow(clippy::too_many_arguments)]
 async fn run_compact_task_inner(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
+    client_session: Option<&mut ModelClientSession>,
     input: Vec<UserInput>,
     initial_context_injection: InitialContextInjection,
     trigger: CompactionTrigger,
@@ -196,6 +203,7 @@ async fn run_compact_task_inner(
     let result = run_compact_task_inner_impl(
         Arc::clone(&sess),
         Arc::clone(&turn_context),
+        client_session,
         input,
         initial_context_injection,
         compaction_metadata,
@@ -245,6 +253,7 @@ async fn run_compact_task_inner(
 async fn run_compact_task_inner_impl(
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
+    client_session: Option<&mut ModelClientSession>,
     input: Vec<UserInput>,
     initial_context_injection: InitialContextInjection,
     compaction_metadata: CompactionTurnMetadata,
@@ -263,8 +272,16 @@ async fn run_compact_task_inner_impl(
     let max_retries = turn_context.provider.info().stream_max_retries();
     let mut retries = 0;
     // Reuse one client session so turn-scoped state (sticky routing and websocket incremental
-    // request tracking) survives retries within this compact turn.
-    let mut client_session = sess.services.model_client.new_session();
+    // request tracking) survives retries within this compact turn. Previous-model maintenance
+    // may supply a session that is routed to another provider.
+    let mut owned_client_session;
+    let client_session: &mut ModelClientSession = match client_session {
+        Some(client_session) => client_session,
+        None => {
+            owned_client_session = sess.services.model_client.new_session();
+            &mut owned_client_session
+        }
+    };
     let compaction_response = loop {
         // Clone is required because of the loop
         let mut turn_input = history
@@ -286,7 +303,7 @@ async fn run_compact_task_inner_impl(
         let attempt_result = drain_to_completed(
             &sess,
             turn_context.as_ref(),
-            &mut client_session,
+            &mut *client_session,
             &responses_metadata,
             &prompt,
             compaction_metadata.phase(),

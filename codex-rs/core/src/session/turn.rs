@@ -388,6 +388,7 @@ pub(crate) async fn run_turn(
         .await;
     sess.set_previous_turn_settings(Some(PreviousTurnSettings {
         model: turn_context.model_info().slug.clone(),
+        model_provider_id: Some(turn_context.config.model_provider_id.clone()),
         cyber_access_program: turn_context.cyber_access_program,
         comp_hash: turn_context.model_info().comp_hash.clone(),
         realtime_active: Some(turn_context.realtime_active),
@@ -1360,15 +1361,57 @@ async fn maybe_run_previous_model_inline_compact(
     if !should_compact_for_comp_hash_change && previous_model == turn_context.model_info().slug {
         return Ok(());
     }
-    let mut previous_model_turn_context = turn_context
-        .with_model(previous_model.clone(), &sess.services.models_manager)
-        .await;
+    // The previous model may belong to a different provider (for example after switching between
+    // vendors). Maintenance requests such as compaction must target that provider because the
+    // model does not exist on the currently active one.
+    let previous_provider = previous_turn_settings
+        .model_provider_id
+        .filter(|provider_id| provider_id != &turn_context.config.model_provider_id)
+        .and_then(|provider_id| {
+            turn_context
+                .config
+                .model_providers
+                .get(&provider_id)
+                .cloned()
+                .map(|provider_info| (provider_id, provider_info))
+        });
+    let mut previous_model_client_session = previous_provider.as_ref().map(|(_, provider_info)| {
+        sess.services
+            .model_client
+            .with_provider(provider_info.clone())
+            .new_session()
+    });
+    let mut previous_model_turn_context = match previous_provider {
+        Some((provider_id, provider_info)) => {
+            turn_context
+                .with_model_on_provider(
+                    previous_model.clone(),
+                    provider_id,
+                    provider_info,
+                    &sess.services.models_manager,
+                )
+                .await
+        }
+        None => {
+            turn_context
+                .with_model(previous_model.clone(), &sess.services.models_manager)
+                .await
+        }
+    };
     // `with_model` preserves the current turn's access program. Restore the previous
     // turn's program so compaction uses the same model/cyber_access_program pair as that turn.
     // Combining the previous model with the current turn's program can produce a pair
     // that the server rejects.
     previous_model_turn_context.cyber_access_program = previous_turn_settings.cyber_access_program;
     let previous_model_turn_context = Arc::new(previous_model_turn_context);
+    // The session's client is bound to the provider that was active when the session was
+    // created, so previous-model maintenance must run through a client session for the
+    // previous provider when one was resolved.
+    let compaction_client_session: &mut ModelClientSession =
+        match previous_model_client_session.as_mut() {
+            Some(session) => session,
+            None => client_session,
+        };
 
     if should_compact_for_comp_hash_change {
         let step_context = sess
@@ -1385,7 +1428,7 @@ async fn maybe_run_previous_model_inline_compact(
             sess,
             step_context,
             fallback_step_context,
-            client_session,
+            compaction_client_session,
             InitialContextInjection::DoNotInject,
             CompactionReason::CompHashChanged,
             CompactionPhase::PreTurn,
@@ -1433,7 +1476,7 @@ async fn maybe_run_previous_model_inline_compact(
             sess,
             step_context,
             fallback_step_context,
-            client_session,
+            compaction_client_session,
             InitialContextInjection::DoNotInject,
             CompactionReason::ModelDownshift,
             CompactionPhase::PreTurn,
@@ -1498,6 +1541,7 @@ async fn run_auto_compact(
             run_inline_auto_compact_task(
                 Arc::clone(sess),
                 Arc::clone(turn_context),
+                Some(client_session),
                 initial_context_injection,
                 reason,
                 phase,

@@ -3331,6 +3331,11 @@ pub struct TurnContextItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_system_sandbox_policy: Option<RawFileSystemSandboxPolicy>,
     pub model: String,
+    /// Provider that served this turn. Absent in older histories; used when resuming or forking
+    /// to route previous-model maintenance work (for example compaction) back to the right
+    /// provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_provider_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comp_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -6228,6 +6233,7 @@ mod tests {
                 .expect("serializable split policy"),
             ),
             model: "gpt-5".to_string(),
+            model_provider_id: None,
             comp_hash: None,
             personality: None,
             collaboration_mode: None,

@@ -19,6 +19,8 @@ use codex_exec_server::ExecutorFileSystem;
 use codex_extension_api::SelectedPluginSnapshot;
 use codex_file_system::FileSystemSandboxContext;
 use codex_model_provider::SharedModelProvider;
+use codex_model_provider::create_model_provider;
+use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ShellEnvironmentPolicy;
@@ -728,6 +730,26 @@ impl TurnContext {
         }
     }
 
+    /// Returns a copy of this turn context that targets `model` on `model_provider`.
+    ///
+    /// Used for maintenance work (for example compaction) that must run against the provider
+    /// which served a previous model instead of the provider the session is currently using.
+    pub(crate) async fn with_model_on_provider(
+        &self,
+        model: String,
+        model_provider_id: String,
+        model_provider: ModelProviderInfo,
+        models_manager: &SharedModelsManager,
+    ) -> Self {
+        let mut context = self.with_model(model, models_manager).await;
+        let mut config = (*context.config).clone();
+        config.model_provider_id = model_provider_id;
+        config.model_provider = model_provider.clone();
+        context.config = Arc::new(config);
+        context.provider = create_model_provider(model_provider, context.auth_manager.clone());
+        context
+    }
+
     fn non_legacy_file_system_sandbox_policy(&self) -> Option<RawFileSystemSandboxPolicy> {
         // Omit the derived split filesystem policy when it is equivalent to
         // the legacy sandbox policy. This keeps turn-context payloads stable
@@ -794,6 +816,7 @@ impl TurnContext {
             network: self.turn_context_network_item(),
             file_system_sandbox_policy: self.non_legacy_file_system_sandbox_policy(),
             model: self.model_info().slug.clone(),
+            model_provider_id: Some(self.config.model_provider_id.clone()),
             comp_hash: self.model_info().comp_hash.clone(),
             personality: self.personality(),
             collaboration_mode: Some(self.collaboration_mode()),

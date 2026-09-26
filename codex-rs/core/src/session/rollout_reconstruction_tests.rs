@@ -404,6 +404,7 @@ async fn record_initial_history_restores_world_state_baseline(input: BaselineTur
         (
             Some(PreviousTurnSettings {
                 model: context_item.model.clone(),
+                model_provider_id: context_item.model_provider_id.clone(),
                 comp_hash: context_item.comp_hash.clone(),
                 cyber_access_program: None,
                 realtime_active: context_item.realtime_active,
@@ -445,6 +446,7 @@ async fn record_initial_history_resumed_bare_turn_context_does_not_hydrate_previ
         network: None,
         file_system_sandbox_policy: None,
         model: previous_model.to_string(),
+        model_provider_id: None,
         comp_hash: None,
         personality: turn_context.personality(),
         collaboration_mode: Some(turn_context.collaboration_mode()),
@@ -496,6 +498,7 @@ async fn record_initial_history_resumed_hydrates_previous_turn_settings_from_lif
         network: None,
         file_system_sandbox_policy: None,
         model: previous_model.to_string(),
+        model_provider_id: None,
         comp_hash: Some("comp-hash-a".to_string()),
         personality: turn_context.personality(),
         collaboration_mode: Some(turn_context.collaboration_mode()),
@@ -559,8 +562,103 @@ async fn record_initial_history_resumed_hydrates_previous_turn_settings_from_lif
         session.previous_turn_settings().await,
         Some(PreviousTurnSettings {
             model: previous_model.to_string(),
+            model_provider_id: None,
             comp_hash: Some("comp-hash-a".to_string()),
             cyber_access_program: None,
+            realtime_active: Some(turn_context.realtime_active),
+        })
+    );
+}
+
+#[tokio::test]
+async fn reconstruct_history_falls_back_to_session_meta_provider_for_legacy_turn_context() {
+    let (session, turn_context) = make_session_and_context().await;
+    let previous_model = "previous-rollout-model";
+    let mut previous_context_item = turn_context.to_turn_context_item();
+    // Legacy histories recorded the model but not the provider that served it; the provider
+    // recorded in the session meta is the best available source for routing previous-model work.
+    previous_context_item.model = previous_model.to_string();
+    previous_context_item.model_provider_id = None;
+    previous_context_item.comp_hash = None;
+
+    let mut rollout_items = vec![RolloutItem::SessionMeta(SessionMetaLine {
+        meta: SessionMeta {
+            model_provider: Some("legacy-provider".to_string()),
+            ..SessionMeta::default()
+        },
+        git: None,
+    })];
+    rollout_items.extend(completed_user_turn_rollout(
+        previous_context_item.clone(),
+        Vec::new(),
+    ));
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout(&turn_context, &rollout_items)
+        .await;
+
+    assert_eq!(
+        reconstructed.previous_turn_settings,
+        Some(PreviousTurnSettings {
+            model: previous_model.to_string(),
+            model_provider_id: Some("legacy-provider".to_string()),
+            cyber_access_program: None,
+            comp_hash: None,
+            realtime_active: Some(turn_context.realtime_active),
+        })
+    );
+    assert_eq!(
+        reconstructed.reference_context_item,
+        Some(previous_context_item)
+    );
+}
+
+#[tokio::test]
+async fn reconstruct_history_recovers_previous_provider_from_thread_settings_snapshot() {
+    let (session, turn_context) = make_session_and_context().await;
+    let previous_model = "previous-rollout-model";
+    let mut previous_context_item = turn_context.to_turn_context_item();
+    previous_context_item.model = previous_model.to_string();
+    previous_context_item.model_provider_id = None;
+    previous_context_item.comp_hash = None;
+
+    // A paginated resume of a fork surfaces the current thread's session meta, whose provider is
+    // the currently selected one, alongside inherited thread settings snapshots. The snapshot
+    // that selected the previous model identifies the provider that can serve it.
+    let mut thread_settings = session.thread_settings_snapshot().await;
+    thread_settings.model = previous_model.to_string();
+    thread_settings.model_provider_id = "previous-provider".to_string();
+    let mut rollout_items = vec![
+        RolloutItem::SessionMeta(SessionMetaLine {
+            meta: SessionMeta {
+                model_provider: Some(turn_context.config.model_provider_id.clone()),
+                ..SessionMeta::default()
+            },
+            git: None,
+        }),
+        RolloutItem::EventMsg(EventMsg::ThreadSettingsApplied(
+            codex_protocol::protocol::ThreadSettingsAppliedEvent {
+                thread_id: None,
+                thread_settings,
+            },
+        )),
+    ];
+    rollout_items.extend(completed_user_turn_rollout(
+        previous_context_item,
+        Vec::new(),
+    ));
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout(&turn_context, &rollout_items)
+        .await;
+
+    assert_eq!(
+        reconstructed.previous_turn_settings,
+        Some(PreviousTurnSettings {
+            model: previous_model.to_string(),
+            model_provider_id: Some("previous-provider".to_string()),
+            cyber_access_program: None,
+            comp_hash: None,
             realtime_active: Some(turn_context.realtime_active),
         })
     );
@@ -677,13 +775,13 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_com
         annotated(vec![turn_one_user, turn_one_assistant])
     );
     assert_eq!(
-        serde_json::to_value(reconstructed.previous_turn_settings)
-            .expect("serialize previous settings"),
-        json!({
-            "model": turn_context.model_info().slug,
-            "comp_hash": null,
-            "realtime_active": turn_context.realtime_active,
-            "cyber_access_program": "daybreak_blue",
+        reconstructed.previous_turn_settings,
+        Some(PreviousTurnSettings {
+            model: turn_context.model_info().slug.clone(),
+            model_provider_id: Some(turn_context.config.model_provider_id.clone()),
+            comp_hash: None,
+            cyber_access_program: Some(CyberAccessProgram::DaybreakBlue),
+            realtime_active: Some(turn_context.realtime_active),
         })
     );
     assert_eq!(
@@ -783,13 +881,13 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_inc
         annotated(vec![turn_one_user, turn_one_assistant])
     );
     assert_eq!(
-        serde_json::to_value(reconstructed.previous_turn_settings)
-            .expect("serialize previous settings"),
-        json!({
-            "model": turn_context.model_info().slug,
-            "comp_hash": null,
-            "realtime_active": turn_context.realtime_active,
-            "cyber_access_program": "daybreak_blue",
+        reconstructed.previous_turn_settings,
+        Some(PreviousTurnSettings {
+            model: turn_context.model_info().slug.clone(),
+            model_provider_id: Some(turn_context.config.model_provider_id.clone()),
+            comp_hash: None,
+            cyber_access_program: Some(CyberAccessProgram::DaybreakBlue),
+            realtime_active: Some(turn_context.realtime_active),
         })
     );
     assert_eq!(
@@ -928,6 +1026,7 @@ async fn reconstruct_history_rollback_skips_non_user_turns_for_history_and_metad
         reconstructed.previous_turn_settings,
         Some(PreviousTurnSettings {
             model: turn_context.model_info().slug.clone(),
+            model_provider_id: Some(turn_context.config.model_provider_id.clone()),
             comp_hash: None,
             cyber_access_program: None,
             realtime_active: Some(turn_context.realtime_active),
@@ -1036,6 +1135,7 @@ async fn reconstruct_history_rollback_counts_inter_agent_assistant_turns() {
         reconstructed.previous_turn_settings,
         Some(PreviousTurnSettings {
             model: turn_context.model_info().slug.clone(),
+            model_provider_id: Some(turn_context.config.model_provider_id.clone()),
             comp_hash: None,
             cyber_access_program: None,
             realtime_active: Some(turn_context.realtime_active),
@@ -1281,6 +1381,7 @@ async fn record_initial_history_resumed_rollback_drops_incomplete_user_turn_comp
         session.previous_turn_settings().await,
         Some(PreviousTurnSettings {
             model: turn_context.model_info().slug.clone(),
+            model_provider_id: Some(turn_context.config.model_provider_id.clone()),
             comp_hash: None,
             cyber_access_program: None,
             realtime_active: Some(turn_context.realtime_active),
@@ -1569,6 +1670,7 @@ async fn bounded_replay_matches_full_replay_after_empty_turn_compactions(
                         last_started_turn_id: Some(format!("wake-{window_number}")),
                         previous_turn_settings: Some(PreviousTurnSettings {
                             model: format!("metadata-model-{window_number}"),
+                            model_provider_id: None,
                             comp_hash: Some(format!("metadata-hash-{window_number}")),
                             cyber_access_program: None,
                             realtime_active: Some(false),
@@ -1685,6 +1787,7 @@ async fn completed_turn_suffix_after_compaction_overrides_resume_metadata() {
     newer_context.comp_hash = Some("newer-hash".to_string());
     let expected_settings = PreviousTurnSettings {
         model: newer_context.model.clone(),
+        model_provider_id: newer_context.model_provider_id.clone(),
         comp_hash: newer_context.comp_hash.clone(),
         cyber_access_program: None,
         realtime_active: newer_context.realtime_active,
@@ -1916,6 +2019,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
         network: None,
         file_system_sandbox_policy: None,
         model: previous_model.to_string(),
+        model_provider_id: None,
         comp_hash: None,
         personality: turn_context.personality(),
         collaboration_mode: Some(turn_context.collaboration_mode()),
@@ -1992,6 +2096,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
         session.previous_turn_settings().await,
         Some(PreviousTurnSettings {
             model: previous_model.to_string(),
+            model_provider_id: None,
             comp_hash: None,
             cyber_access_program: None,
             realtime_active: Some(turn_context.realtime_active),
@@ -2017,6 +2122,7 @@ async fn record_initial_history_resumed_turn_context_after_compaction_reestablis
             network: None,
             file_system_sandbox_policy: None,
             model: previous_model.to_string(),
+            model_provider_id: None,
             comp_hash: None,
             personality: turn_context.personality(),
             collaboration_mode: Some(turn_context.collaboration_mode()),
@@ -2053,6 +2159,7 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
         network: None,
         file_system_sandbox_policy: None,
         model: previous_model.to_string(),
+        model_provider_id: None,
         comp_hash: None,
         personality: turn_context.personality(),
         collaboration_mode: Some(turn_context.collaboration_mode()),
@@ -2159,6 +2266,7 @@ async fn record_initial_history_resumed_aborted_turn_without_id_clears_active_tu
         session.previous_turn_settings().await,
         Some(PreviousTurnSettings {
             model: previous_model.to_string(),
+            model_provider_id: None,
             comp_hash: None,
             cyber_access_program: None,
             realtime_active: Some(turn_context.realtime_active),
@@ -2196,6 +2304,7 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
         network: None,
         file_system_sandbox_policy: None,
         model: current_model.to_string(),
+        model_provider_id: None,
         comp_hash: None,
         personality: turn_context.personality(),
         collaboration_mode: Some(turn_context.collaboration_mode()),
@@ -2295,6 +2404,7 @@ async fn record_initial_history_resumed_unmatched_abort_preserves_active_turn_fo
         session.previous_turn_settings().await,
         Some(PreviousTurnSettings {
             model: current_model.to_string(),
+            model_provider_id: None,
             comp_hash: None,
             cyber_access_program: None,
             realtime_active: Some(turn_context.realtime_active),
@@ -2330,6 +2440,7 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
         network: None,
         file_system_sandbox_policy: None,
         model: previous_model.to_string(),
+        model_provider_id: None,
         comp_hash: None,
         personality: turn_context.personality(),
         collaboration_mode: Some(turn_context.collaboration_mode()),
@@ -2427,6 +2538,7 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_compaction_clea
         session.previous_turn_settings().await,
         Some(PreviousTurnSettings {
             model: previous_model.to_string(),
+            model_provider_id: None,
             comp_hash: None,
             cyber_access_program: None,
             realtime_active: Some(turn_context.realtime_active),
@@ -2480,6 +2592,7 @@ async fn record_initial_history_resumed_trailing_incomplete_turn_preserves_turn_
         session.previous_turn_settings().await,
         Some(PreviousTurnSettings {
             model: turn_context.model_info().slug.clone(),
+            model_provider_id: Some(turn_context.config.model_provider_id.clone()),
             comp_hash: None,
             cyber_access_program: None,
             realtime_active: Some(turn_context.realtime_active),
@@ -2515,6 +2628,7 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
         network: None,
         file_system_sandbox_policy: None,
         model: previous_model.to_string(),
+        model_provider_id: None,
         comp_hash: None,
         personality: turn_context.personality(),
         collaboration_mode: Some(turn_context.collaboration_mode()),
@@ -2625,6 +2739,7 @@ async fn record_initial_history_resumed_replaced_incomplete_compacted_turn_clear
         session.previous_turn_settings().await,
         Some(PreviousTurnSettings {
             model: previous_model.to_string(),
+            model_provider_id: None,
             comp_hash: None,
             cyber_access_program: None,
             realtime_active: Some(turn_context.realtime_active),

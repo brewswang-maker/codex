@@ -303,6 +303,7 @@ impl Session {
                     ) {
                         active_segment.previous_turn_settings = Some(PreviousTurnSettings {
                             model: ctx.model.clone(),
+                            model_provider_id: ctx.model_provider_id.clone(),
                             cyber_access_program: ctx.cyber_access_program,
                             comp_hash: ctx.comp_hash.clone(),
                             realtime_active: ctx.realtime_active,
@@ -382,6 +383,37 @@ impl Session {
         if previous_turn_settings.is_none() {
             previous_turn_settings =
                 resume_metadata.and_then(|metadata| metadata.previous_turn_settings.clone());
+        }
+
+        // Older histories do not record a provider per turn. Recover the provider that selected
+        // the previous model from the newest matching thread settings snapshot, then fall back to
+        // the session's recorded provider, so previous-model work (for example compaction) still
+        // targets a provider that can serve that model.
+        if let Some(settings) = previous_turn_settings.as_mut()
+            && settings.model_provider_id.is_none()
+        {
+            let previous_model = settings.model.as_str();
+            let current_provider_id = turn_context.config.model_provider_id.as_str();
+            settings.model_provider_id = rollout_items
+                .iter()
+                .rev()
+                .find_map(|item| match item {
+                    RolloutItem::EventMsg(EventMsg::ThreadSettingsApplied(event))
+                        if event.thread_settings.model == previous_model
+                            && event.thread_settings.model_provider_id != current_provider_id =>
+                    {
+                        Some(event.thread_settings.model_provider_id.clone())
+                    }
+                    _ => None,
+                })
+                .or_else(|| {
+                    rollout_items.iter().find_map(|item| match item {
+                        RolloutItem::SessionMeta(session_meta) => {
+                            session_meta.meta.model_provider.clone()
+                        }
+                        _ => None,
+                    })
+                });
         }
 
         let fallback_window_number = u64::try_from(
