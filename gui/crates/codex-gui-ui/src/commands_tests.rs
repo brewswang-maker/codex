@@ -2,6 +2,7 @@
 
 #![allow(clippy::expect_used, clippy::panic)]
 
+use super::RESUME_TURNS_PAGE_LIMIT;
 use super::SLASH_COMMANDS;
 use super::SlashAction;
 use super::link_import_notice;
@@ -14,6 +15,8 @@ use super::thread_start_params;
 use crate::state::FileBody;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::SandboxMode;
+use codex_app_server_protocol::SortDirection;
+use codex_app_server_protocol::TurnItemsView;
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -52,6 +55,20 @@ fn thread_resume_params_keeps_the_workspace_approval_posture() {
     assert_eq!(params.thread_id, String::from("thr-1"));
     assert_eq!(params.approval_policy, Some(AskForApproval::OnRequest));
     assert_eq!(params.sandbox, Some(SandboxMode::WorkspaceWrite));
+}
+
+#[test]
+fn thread_resume_params_bootstraps_paginated_history() {
+    // Full-history hydration is deprecated for paginated threads, so the
+    // resume asks for a first turn page (full items, oldest first) and
+    // `thread/turns/list` continuations supply whatever follows.
+    let params = thread_resume_params(String::from("thr-1"));
+
+    assert!(params.exclude_turns);
+    let page = params.initial_turns_page.expect("bootstrap page requested");
+    assert_eq!(page.limit, Some(RESUME_TURNS_PAGE_LIMIT));
+    assert_eq!(page.sort_direction, Some(SortDirection::Asc));
+    assert_eq!(page.items_view, Some(TurnItemsView::Full));
 }
 
 #[test]

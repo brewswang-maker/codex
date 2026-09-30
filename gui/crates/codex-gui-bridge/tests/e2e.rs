@@ -324,7 +324,9 @@ async fn thread_list_resume_and_archive_round_trip() {
     let items = &resumed.thread.turns[0].items;
     assert_eq!(items.len(), 2);
     assert!(matches!(&items[0], ThreadItem::UserMessage { .. }));
-    assert!(matches!(&items[1], ThreadItem::AgentMessage { text, .. } if text == "History replay"));
+    assert!(
+        matches!(&items[1], ThreadItem::AgentMessage { text, .. } if text.starts_with("# History replay"))
+    );
 
     // Archive acknowledges and notifies.
     let archived = client

@@ -119,14 +119,17 @@ pub struct SessionHistory {
 }
 
 impl SessionHistory {
-    /// Projects a resume response down to what the transcript needs.
-    pub fn from_resume(response: &ThreadResumeResponse) -> Self {
+    /// Projects a resume response down to what the transcript needs. The
+    /// turns are passed in explicitly: paginated threads replay history
+    /// through `initialTurnsPage` pages instead of the deprecated
+    /// full-history hydration, so the caller owns assembling them.
+    pub fn from_resume(response: &ThreadResumeResponse, turns: Vec<Turn>) -> Self {
         Self {
             thread_id: response.thread.id.clone(),
             model_provider: response.model_provider.clone(),
             model: response.model.clone(),
             cwd: response.cwd.to_string_lossy().into_owned(),
-            turns: response.thread.turns.clone(),
+            turns,
         }
     }
 }

@@ -6,6 +6,7 @@ use crate::message::Message;
 use crate::message::SkillImportTarget;
 use crate::state::State;
 use crate::state::Status;
+use crate::state::VoiceInputStatus;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ClientInfo;
 use codex_app_server_protocol::ClientRequest;
@@ -42,6 +43,7 @@ use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::SkillsConfigWriteParams;
 use codex_app_server_protocol::SkillsListParams;
 use codex_app_server_protocol::SkillsListResponse;
+use codex_app_server_protocol::SortDirection;
 use codex_app_server_protocol::ThreadArchiveParams;
 use codex_app_server_protocol::ThreadCompactStartParams;
 use codex_app_server_protocol::ThreadDeleteParams;
@@ -49,14 +51,19 @@ use codex_app_server_protocol::ThreadForkParams;
 use codex_app_server_protocol::ThreadForkResponse;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
+use codex_app_server_protocol::ThreadResumeInitialTurnsPageParams;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadSetNameParams;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
+use codex_app_server_protocol::ThreadTurnsListParams;
+use codex_app_server_protocol::ThreadTurnsListResponse;
 use codex_app_server_protocol::ThreadUnarchiveParams;
+use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnInterruptParams;
+use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::UserInput;
 use codex_gui_bridge::Error;
@@ -68,6 +75,7 @@ use codex_gui_core::SessionHistory;
 use codex_gui_core::compose_inputs;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use iced::Task;
+use iced::futures::SinkExt as _;
 use std::path::PathBuf;
 
 #[cfg(test)]
@@ -123,14 +131,26 @@ fn thread_start_params(cwd: Option<String>) -> ThreadStartParams {
     }
 }
 
+/// Page size for the paginated resume bootstrap; it matches the server's
+/// own turn page cap (100).
+const RESUME_TURNS_PAGE_LIMIT: u32 = 100;
+
 /// Resumes a thread with the same approval posture as
 /// [`thread_start_params`]: without it, an older thread keeps the
-/// server-default policy that prompts on every patch.
+/// server-default policy that prompts on every patch. History is
+/// bootstrapped through `initialTurnsPage` instead of the deprecated
+/// full-history hydration; [`collect_resume_turns`] pages the rest.
 fn thread_resume_params(thread_id: String) -> ThreadResumeParams {
     ThreadResumeParams {
         thread_id,
         approval_policy: Some(AskForApproval::OnRequest),
         sandbox: Some(SandboxMode::WorkspaceWrite),
+        exclude_turns: true,
+        initial_turns_page: Some(ThreadResumeInitialTurnsPageParams {
+            limit: Some(RESUME_TURNS_PAGE_LIMIT),
+            sort_direction: Some(SortDirection::Asc),
+            items_view: Some(TurnItemsView::Full),
+        }),
         ..ThreadResumeParams::default()
     }
 }
@@ -186,6 +206,16 @@ pub(crate) fn submit(state: &mut State) -> Task<Message> {
         return Task::none();
     }
 
+    let text = std::mem::take(&mut state.composer);
+    let images = std::mem::take(&mut state.attachments.images);
+    submit_text(state, text, images)
+}
+
+/// Sends `text` plus attachments as a new turn on the active thread,
+/// bypassing the composer buffer; the composer submit and the
+/// edit-and-resubmit flow share this path. The reply drives
+/// [`Message::TurnSettled`].
+pub(crate) fn submit_text(state: &mut State, text: String, images: Vec<PathBuf>) -> Task<Message> {
     let Some(client) = state.client.clone() else {
         return Task::none();
     };
@@ -193,8 +223,6 @@ pub(crate) fn submit(state: &mut State) -> Task<Message> {
         return Task::none();
     };
 
-    let text = std::mem::take(&mut state.composer);
-    let images = std::mem::take(&mut state.attachments.images);
     state.status = Status::Thinking;
     let prompt = text.clone();
     let submitted_images = images.clone();
@@ -473,14 +501,66 @@ pub(crate) fn resume_thread(state: &mut State, thread_id: String) -> Task<Messag
                     params: thread_resume_params(thread_id),
                 })
                 .await;
-            result.and_then(|value| {
-                serde_json::from_value::<ThreadResumeResponse>(value)
-                    .map(|response| SessionHistory::from_resume(&response))
-                    .map_err(Error::Json)
-            })
+            match result {
+                Err(error) => Err(error),
+                Ok(value) => {
+                    let response: ThreadResumeResponse =
+                        serde_json::from_value(value).map_err(Error::Json)?;
+                    let turns = collect_resume_turns(&client, &response).await;
+                    Ok(SessionHistory::from_resume(&response, turns))
+                }
+            }
         },
         Message::SessionResumed,
     )
+}
+
+/// Replays a resumed thread's stored history: the bootstrap page from
+/// `initialTurnsPage` followed by every `thread/turns/list` continuation.
+/// A failing continuation keeps the turns already collected so the
+/// transcript still renders what was loaded.
+async fn collect_resume_turns(
+    client: &codex_gui_bridge::Client,
+    response: &ThreadResumeResponse,
+) -> Vec<Turn> {
+    let mut turns = match response.initial_turns_page.as_ref() {
+        Some(page) => page.data.clone(),
+        None => response.thread.turns.clone(),
+    };
+    let mut cursor = response
+        .initial_turns_page
+        .as_ref()
+        .and_then(|page| page.next_cursor.clone());
+    while let Some(page_cursor) = cursor.take() {
+        let result = client
+            .call(|request_id| ClientRequest::ThreadTurnsList {
+                request_id,
+                params: ThreadTurnsListParams {
+                    thread_id: response.thread.id.clone(),
+                    cursor: Some(page_cursor.clone()),
+                    limit: Some(RESUME_TURNS_PAGE_LIMIT),
+                    sort_direction: Some(SortDirection::Asc),
+                    items_view: Some(TurnItemsView::Full),
+                },
+            })
+            .await
+            .and_then(|value| {
+                serde_json::from_value::<ThreadTurnsListResponse>(value).map_err(Error::Json)
+            });
+        let page = match result {
+            Ok(page) => page,
+            Err(error) => {
+                tracing::warn!(%error, "thread/turns/list continuation failed");
+                break;
+            }
+        };
+        if page.next_cursor.as_deref() == Some(page_cursor.as_str()) {
+            break;
+        }
+        turns.extend(page.data);
+        cursor = page.next_cursor;
+    }
+    turns
 }
 
 /// Archives one thread; the caller chains a sidebar refresh afterwards.
@@ -542,6 +622,9 @@ pub(crate) fn fork_thread(state: &State, source: String) -> Task<Message> {
                     request_id,
                     params: ThreadForkParams {
                         thread_id: source.clone(),
+                        // The reply only needs the new thread id; history
+                        // replays through the resume bootstrap page.
+                        exclude_turns: true,
                         ..ThreadForkParams::default()
                     },
                 })
@@ -580,6 +663,9 @@ pub(crate) fn fork_thread_with_model(
                         thread_id,
                         model: Some(model),
                         model_provider: Some(provider_id),
+                        // The reply only needs the new thread id; history
+                        // replays through the resume bootstrap page.
+                        exclude_turns: true,
                         ..ThreadForkParams::default()
                     },
                 })
@@ -590,6 +676,46 @@ pub(crate) fn fork_thread_with_model(
                         .map_err(Error::Json)
                 });
             Message::ModelSwitchForked(result)
+        },
+        |msg| msg,
+    )
+}
+
+/// Forks the running thread up to (but not including) one turn, dropping
+/// that turn and everything after it so an edited message can be resent
+/// on a clean slate. The reply drives [`Message::EditForked`], which
+/// resumes the fork; the pending edit's prompt goes out as the resumed
+/// thread's first new turn.
+pub(crate) fn fork_thread_before_turn(
+    state: &State,
+    thread_id: String,
+    before_turn_id: String,
+) -> Task<Message> {
+    let Some(client) = state.client.clone() else {
+        return Task::none();
+    };
+
+    Task::perform(
+        async move {
+            let result = client
+                .call(|request_id| ClientRequest::ThreadFork {
+                    request_id,
+                    params: ThreadForkParams {
+                        thread_id,
+                        before_turn_id: Some(before_turn_id),
+                        // The reply only needs the new thread id; history
+                        // replays through the resume bootstrap page.
+                        exclude_turns: true,
+                        ..ThreadForkParams::default()
+                    },
+                })
+                .await
+                .and_then(|value| {
+                    serde_json::from_value::<ThreadForkResponse>(value)
+                        .map(|response| response.thread.id)
+                        .map_err(Error::Json)
+                });
+            Message::EditForked(result)
         },
         |msg| msg,
     )
@@ -1237,6 +1363,272 @@ pub(crate) fn commit_selected(state: &mut State) -> Task<Message> {
             &message,
         ))
     })
+}
+
+/// The ✨ optimizer instruction: rewrite the user's draft into one
+/// structured, actionable prompt. The rewrite turn runs on a throwaway
+/// thread pinned to the project, so the model can look around for
+/// context before answering.
+const PROMPT_OPTIMIZE_INSTRUCTION: &str = "You are a senior prompt engineer for a coding agent. \
+Rewrite the user's draft below into one structured, actionable development-task prompt. \
+Include: a clear goal, key constraints, and a short acceptance checklist. \
+Ground it in the current project when you can (read files as needed). \
+Reply with only the rewritten prompt text - no preamble, no explanations, no code fences. \
+Match the draft's language (Chinese draft -> Chinese rewrite).";
+
+/// ✨ prompt optimizer, step 1: open a throwaway thread pinned to the
+/// current project for the rewrite turn.
+pub(crate) fn request_prompt_optimize(state: &mut State) -> Task<Message> {
+    let Some(client) = state.client.clone() else {
+        return Task::none();
+    };
+    let draft = state.composer.trim().to_string();
+    if draft.is_empty() {
+        return Task::none();
+    }
+    let Some(cwd) = state.status_board.cwd().map(str::to_string) else {
+        state.prompt_optimize.status =
+            crate::state::PromptOptimizeStatus::Failed(String::from("no working directory"));
+        return Task::none();
+    };
+    state.prompt_optimize.status = crate::state::PromptOptimizeStatus::Running;
+    state.prompt_optimize.original = None;
+
+    Task::future(async move {
+        let result = client
+            .call(|request_id| ClientRequest::ThreadStart {
+                request_id,
+                params: thread_start_params(Some(cwd.clone())),
+            })
+            .await
+            .and_then(|value| {
+                serde_json::from_value::<ThreadStartResponse>(value)
+                    .map(|response| response.thread.id)
+                    .map_err(Error::Json)
+            });
+        Message::OptimizeThreadStarted {
+            original: draft,
+            result,
+        }
+    })
+}
+
+/// ✨ prompt optimizer, step 2: one turn on the throwaway thread asking
+/// for the restructured prompt over the captured draft.
+pub(crate) fn start_optimize_turn(state: &State) -> Task<Message> {
+    let Some(client) = state.client.clone() else {
+        return Task::none();
+    };
+    let Some(thread_id) = state.prompt_optimize.thread.clone() else {
+        return Task::none();
+    };
+    let Some(original) = state.prompt_optimize.original.clone() else {
+        return Task::none();
+    };
+
+    let prompt = format!("{PROMPT_OPTIMIZE_INSTRUCTION}\n\nDraft:\n{original}");
+    let input = vec![UserInput::Text {
+        text: prompt,
+        text_elements: Vec::new(),
+    }];
+
+    Task::perform(
+        async move {
+            let result = client
+                .call(|request_id| ClientRequest::TurnStart {
+                    request_id,
+                    params: TurnStartParams {
+                        thread_id,
+                        input,
+                        ..TurnStartParams::default()
+                    },
+                })
+                .await;
+            if let Err(error) = result {
+                tracing::warn!(%error, "optimize turn start failed");
+            }
+        },
+        |()| Message::TurnAcked,
+    )
+}
+
+/// Voice dictation, step 1: open a throwaway thread pinned to the current
+/// project; the realtime session runs on it (same isolation as the commit
+/// draft and the ✨ optimizer).
+pub(crate) fn request_voice_thread(state: &mut State) -> Task<Message> {
+    let Some(client) = state.client.clone() else {
+        state.voice_input.status =
+            VoiceInputStatus::Failed(String::from("not connected to the app-server"));
+        return Task::none();
+    };
+    let Some(cwd) = state.status_board.cwd().map(str::to_string) else {
+        state.voice_input.status = VoiceInputStatus::Failed(String::from("no working directory"));
+        return Task::none();
+    };
+
+    Task::future(async move {
+        let result = client
+            .call(|request_id| ClientRequest::ThreadStart {
+                request_id,
+                params: thread_start_params(Some(cwd.clone())),
+            })
+            .await
+            .and_then(|value| {
+                serde_json::from_value::<ThreadStartResponse>(value)
+                    .map(|response| response.thread.id)
+                    .map_err(Error::Json)
+            });
+        Message::VoiceThreadStarted { result }
+    })
+}
+
+/// The actionable hint shown when the realtime session refuses to open;
+/// the domestic preset models (GLM/DeepSeek/Kimi/Qwen/Doubao) have no
+/// realtime channel, and nothing should pretend otherwise.
+pub(crate) const VOICE_UNSUPPORTED_HINT: &str =
+    "当前模型不支持语音输入，请切换至支持实时语音的模型";
+
+/// Voice dictation, step 2: the whole session as one streaming task -
+/// realtime start, microphone capture, 100 ms PCM16 batches, teardown.
+///
+/// The task owns the capture handle and the stop signal; the update loop
+/// owns every state transition and, through notification routing, the
+/// transcript itself. On stop the device is released first (the mic never
+/// stays open), the already-captured tail is uploaded, the session ends,
+/// and the throwaway thread archives.
+pub(crate) fn start_voice_session(state: &mut State) -> Task<Message> {
+    let Some(client) = state.client.clone() else {
+        return Task::none();
+    };
+    let Some(thread_id) = state.voice_input.thread.clone() else {
+        return Task::none();
+    };
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+    state.voice_input.stop = Some(stop_tx);
+
+    Task::stream(iced::stream::channel(
+        16,
+        move |mut output: iced::futures::channel::mpsc::Sender<Message>| async move {
+            if let Err(error) = codex_gui_bridge::realtime::start(&client, &thread_id).await {
+                let reason = format!("{VOICE_UNSUPPORTED_HINT}（{error}）");
+                let _ignored = output
+                    .send(Message::VoiceSessionStarted {
+                        result: Err(reason),
+                    })
+                    .await;
+                archive_voice_thread(&client, &thread_id).await;
+                let _ignored = output.send(Message::VoiceInputStopped).await;
+                return;
+            }
+
+            // The cpal callback runs on the audio thread and must never
+            // block, so chunks hop over an unbounded channel; opening the
+            // device itself blocks, so it runs on a blocking worker.
+            let (audio_tx, mut audio_rx) =
+                tokio::sync::mpsc::unbounded_channel::<codex_gui_core::AudioChunk>();
+            let capture = tokio::task::spawn_blocking(move || {
+                codex_gui_core::start_audio_capture(move |chunk| {
+                    let _ignored = audio_tx.send(chunk);
+                })
+            })
+            .await
+            .unwrap_or_else(|error| Err(codex_gui_core::CaptureError::Thread(error.to_string())));
+            let capture = match capture {
+                Ok(capture) => capture,
+                Err(error) => {
+                    let reason = format!("无法访问麦克风：{error}");
+                    let _ignored = output
+                        .send(Message::VoiceSessionStarted {
+                            result: Err(reason),
+                        })
+                        .await;
+                    let _ignored = codex_gui_bridge::realtime::stop(&client, &thread_id).await;
+                    archive_voice_thread(&client, &thread_id).await;
+                    let _ignored = output.send(Message::VoiceInputStopped).await;
+                    return;
+                }
+            };
+            let _ignored = output
+                .send(Message::VoiceSessionStarted { result: Ok(()) })
+                .await;
+
+            // 100 ms batches at the protocol's 24 kHz mono PCM16.
+            let target = codex_gui_core::TARGET_SAMPLE_RATE as usize / 10;
+            let mut pending: Vec<i16> = Vec::new();
+            let mut consecutive_errors = 0u32;
+            let mut stop_rx = stop_rx;
+            loop {
+                tokio::select! {
+                    _ = &mut stop_rx => break,
+                    maybe = audio_rx.recv() => {
+                        let Some(chunk) = maybe else { break };
+                        pending.extend_from_slice(&chunk.pcm16);
+                        if pending.len() < target {
+                            continue;
+                        }
+                        let batch = std::mem::take(&mut pending);
+                        match codex_gui_bridge::realtime::append_audio(
+                            &client,
+                            &thread_id,
+                            &batch,
+                            codex_gui_core::TARGET_SAMPLE_RATE,
+                        )
+                        .await
+                        {
+                            Ok(()) => consecutive_errors = 0,
+                            Err(error) => {
+                                consecutive_errors += 1;
+                                tracing::warn!(%error, "voice audio append failed");
+                                // The session is gone; the notification
+                                // side reports it to the user.
+                                if consecutive_errors >= 5 {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Stopped: release the device first, then flush whatever was
+            // already captured, then end the session cleanly.
+            capture.stop();
+            while let Ok(chunk) = audio_rx.try_recv() {
+                pending.extend_from_slice(&chunk.pcm16);
+            }
+            if !pending.is_empty() {
+                let _ignored = codex_gui_bridge::realtime::append_audio(
+                    &client,
+                    &thread_id,
+                    &pending,
+                    codex_gui_core::TARGET_SAMPLE_RATE,
+                )
+                .await;
+            }
+            let _ignored = codex_gui_bridge::realtime::stop(&client, &thread_id).await;
+            // Let the server's final transcript notifications land while
+            // the thread id is still routed to the composer.
+            tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            archive_voice_thread(&client, &thread_id).await;
+            let _ignored = output.send(Message::VoiceInputStopped).await;
+        },
+    ))
+}
+
+/// Archives the throwaway dictation thread; failure only logs - the UI has
+/// already been told the session ended either way.
+async fn archive_voice_thread(client: &codex_gui_bridge::Client, thread_id: &str) {
+    let result = client
+        .call(|request_id| ClientRequest::ThreadArchive {
+            request_id,
+            params: ThreadArchiveParams {
+                thread_id: thread_id.to_string(),
+            },
+        })
+        .await;
+    if let Err(error) = result {
+        tracing::warn!(%error, "voice thread archive failed");
+    }
 }
 
 /// AI commit draft, step 1: stage the selection, capture the staged

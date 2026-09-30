@@ -16,6 +16,7 @@ use codex_gui_core::SessionHistory;
 use codex_gui_core::SettingField;
 use codex_gui_core::SkillsTab;
 use iced::widget::markdown;
+use iced::widget::text_editor;
 use iced_swdir_tree::DirectoryTreeEvent;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -110,6 +111,25 @@ impl QuestScenario {
             QuestScenario::Spec => "请先为以下任务写一份实现规格，确认后再按规格实现：\n",
             QuestScenario::Prototype => "请先做一个可快速验证的原型来探索这个想法：\n",
             QuestScenario::Tool => "请帮我构建一个可复用的工具/脚本，需求：\n",
+        }
+    }
+}
+
+/// Which half of the Quest artifact panel is on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArtifactTab {
+    /// The live plan: explanation plus the step checklist.
+    Spec,
+    /// The files the turn changed, each row opening the diff overlay.
+    Changes,
+}
+
+impl ArtifactTab {
+    /// The title shown in the panel's tab strip.
+    pub fn title(self) -> &'static str {
+        match self {
+            ArtifactTab::Spec => "Spec",
+            ArtifactTab::Changes => "变更文件",
         }
     }
 }
@@ -254,6 +274,9 @@ pub enum Message {
     SessionsLoaded(Result<ThreadListResponse, Error>),
     /// The user picked a thread in the sidebar to resume.
     SessionSelected(String),
+    /// The user asked to advance to the next task in the inventory
+    /// (Ctrl+G, the reference IDE's switch-task shortcut).
+    NextSessionRequested,
     /// `thread/resume` finished; success carries the history to replay.
     SessionResumed(Result<SessionHistory, Error>),
     /// An in-place model switch (`thread/settings/update`) settled; the
@@ -415,9 +438,49 @@ pub enum Message {
     SidebarToggled,
     /// The user picked a sidebar pane in the activity bar.
     SidebarTab(SidebarTab),
-    /// The user asked to copy one message body to the clipboard; `id`
-    /// drives the "copied" button feedback, `text` is the payload.
-    CopyMessage { id: String, text: String },
+    /// The user asked to copy one piece of transcript content to the
+    /// clipboard; `key` drives the "copied" badge, `text` is the payload.
+    CopyMessage {
+        /// Feedback key: the message entry id or a code-block hash.
+        key: String,
+        /// The clipboard payload.
+        text: String,
+    },
+    /// A timed copy badge outlived its welcome; clears it only when `key`
+    /// still names the current feedback.
+    CopyFeedbackExpired(String),
+    /// The pointer entered or left one transcript message; the payload is
+    /// the hovered message entry id (`None` on leave).
+    MessageHovered(Option<String>),
+    /// A drag inside a transcript text line passed the click threshold;
+    /// the payload is the anchor point of the fresh selection.
+    TextSelectionStarted(crate::state::SelectionPoint),
+    /// The pointer moved during a drag selection; the payload is the line
+    /// and offset under the pointer now.
+    TextSelectionFocused(crate::state::SelectionPoint),
+    /// One line covered by the active selection reports its plain text,
+    /// so Ctrl+C can assemble the payload without re-parsing markdown.
+    TextSelectionLine {
+        /// The line-block key the text belongs to.
+        key: String,
+        /// The line's full plain text.
+        text: String,
+    },
+    /// The partial selection was dropped (Esc or a click elsewhere).
+    TextSelectionCleared,
+    /// The user pressed Ctrl+C with a partial selection live.
+    TextSelectionCopyRequested,
+    /// The user opened the inline editor on one sent user message.
+    EditStarted(String),
+    /// The inline editor buffer changed.
+    EditTextEdited(text_editor::Action),
+    /// The user submitted the inline editor (Enter or the send button).
+    EditSubmitted,
+    /// The user dismissed the inline editor without submitting.
+    EditCancelled,
+    /// A `thread/fork` opened for an edit settled; `Ok` carries the new
+    /// thread id whose resume resends the pending edit's prompt.
+    EditForked(Result<String, Error>),
     /// The user toggled like/dislike on one agent message.
     ReactionToggled { id: String, reaction: Reaction },
     /// The user expanded or collapsed one command tool card.
@@ -454,6 +517,44 @@ pub enum Message {
     },
     /// The AI draft could not even start (nothing staged, no cwd, ...).
     CommitDraftFailed(String),
+    /// The user asked to rewrite the composer draft into a structured
+    /// prompt (the composer's ✨ action).
+    PromptOptimizeRequested,
+    /// The user rolled the optimized rewrite back to the draft it
+    /// replaced.
+    PromptOptimizeUndo,
+    /// The throwaway optimizer thread opened; ready for the rewrite
+    /// turn.
+    OptimizeThreadStarted {
+        /// The composer draft the rewrite turn will restructure.
+        original: String,
+        /// The new thread id, or why the open failed.
+        result: Result<String, codex_gui_bridge::Error>,
+    },
+    /// The user toggled composer voice input (mic button or Ctrl+Shift+V):
+    /// starts dictation when idle, stops it while live.
+    VoiceInputToggled,
+    /// The recording indicator's heartbeat; flips the pulse phase.
+    VoiceInputPulse,
+    /// The throwaway dictation thread opened; ready for the realtime
+    /// session.
+    VoiceThreadStarted {
+        /// The new thread id, or why the open failed.
+        result: Result<String, codex_gui_bridge::Error>,
+    },
+    /// The realtime session and microphone settled on the voice task.
+    VoiceSessionStarted {
+        /// Nothing, or why dictation could not open (unsupported model,
+        /// no input device, server error).
+        result: Result<(), String>,
+    },
+    /// Live transcription text for the user's speech arrived.
+    VoiceTranscriptDelta(String),
+    /// A transcript part was finalized with its complete text.
+    VoiceTranscriptDone(String),
+    /// The dictation task shut down: capture released, session stopped,
+    /// thread archived.
+    VoiceInputStopped,
     /// The user removed one pending attachment chip by position.
     AttachmentRemoved(usize),
     /// The user asked to relaunch the app-server after a disconnect.
@@ -561,6 +662,16 @@ pub enum Message {
     },
     /// The user opened or closed the My Quests board overlay.
     QuestBoardToggled,
+    /// The user hid or showed the left rail (the editor sidebar or the
+    /// Quest rail) with Ctrl+B.
+    LeftRailToggled,
+    /// The user opened or closed the Quest artifact panel (Ctrl+Shift+B).
+    QuestArtifactsToggled,
+    /// The user picked one tab of the Quest artifact panel.
+    QuestArtifactTabSelected(ArtifactTab),
+    /// The user clicked one changed file in the artifact panel; the
+    /// payload indexes the transcript's file-change list.
+    QuestArtifactFileOpened(usize),
     /// The launch page's workspace chip toggled its project dropdown.
     QuestWorkspaceToggled,
     /// The rail's show-more hint expanded (or collapsed) the quest list.

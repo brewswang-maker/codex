@@ -17,6 +17,9 @@ iced = { workspace = true }
 iced-swdir-tree = { workspace = true }
 rfd = { workspace = true }
 serde_json = "1"
+# Drives the timed copy-badge expiry; shares the executor runtime the
+# bridge and iced already use.
+tokio = { workspace = true }
 tracing = "0.1"
 
 [features]
@@ -29,9 +32,6 @@ wgpu = ["iced/wgpu"]
 [dev-dependencies]
 # Headless view-interaction simulator (spec section 10, UI layer row).
 iced_test = "0.14"
-# Builds in-memory `Client` handles so update tests can exercise the
-# synchronous half of command paths without a live app-server.
-tokio = { workspace = true }
 tempfile = "3"
 # Snapshot coverage of the markdown streaming segmentation (spec section 10,
 # snapshot row).

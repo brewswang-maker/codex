@@ -3,6 +3,7 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
 use crate::message::AppMode;
+use crate::message::ArtifactTab;
 use crate::message::MenuId;
 use crate::message::Message;
 use crate::message::QuestScenario;
@@ -10,6 +11,7 @@ use crate::state::FileBody;
 use crate::state::State;
 use crate::state::Status;
 use crate::view;
+use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::SkillScope;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_gui_bridge::Flags;
@@ -22,6 +24,7 @@ use codex_gui_core::SkillNotice;
 use codex_gui_core::SkillRow;
 use codex_gui_core::SkillsTab;
 use iced_test::simulator;
+use serde_json::from_value;
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -230,6 +233,92 @@ fn quest_header_offers_the_board_entry() {
             .iter()
             .any(|message| matches!(message, Message::QuestBoardToggled)),
         "clicking the board entry emits QuestBoardToggled, got {messages:?}"
+    );
+}
+
+/// Applies one `turn/plan/updated` frame through the transcript.
+fn apply_plan_notification(state: &mut State) {
+    let notification: ServerNotification = from_value(json!({
+        "method": "turn/plan/updated",
+        "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "explanation": "keep the walk testable",
+            "plan": [{"step": "reproduce the bug", "status": "inProgress"}]
+        }
+    }))
+    .expect("plan notification decodes");
+    state.transcript.apply(&notification);
+}
+
+/// Applies one completed `fileChange` frame through the transcript.
+fn apply_file_change(state: &mut State) {
+    let notification: ServerNotification = from_value(json!({
+        "method": "item/completed",
+        "params": {
+            "item": {
+                "type": "fileChange",
+                "id": "f1",
+                "changes": [
+                    {
+                        "path": "src/main.rs",
+                        "kind": {"type": "update", "movePath": null},
+                        "diff": "@@ -1 +1 @@\n-old\n+new\n"
+                    }
+                ],
+                "status": "completed"
+            },
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "completedAtMs": 2
+        }
+    }))
+    .expect("file change notification decodes");
+    state.transcript.apply(&notification);
+}
+
+#[test]
+fn quest_artifact_panel_shows_the_spec_tab_with_the_live_plan() {
+    let mut state = State::new(Flags::default_app_server());
+    state.status = Status::Ready;
+    state.mode = AppMode::Quest;
+    apply_plan_notification(&mut state);
+
+    let mut ui = simulator(view(&state));
+
+    assert!(ui.find("Spec").is_ok(), "the Spec tab is on the strip");
+    assert!(
+        ui.find("变更文件").is_ok(),
+        "the Changes tab is on the strip"
+    );
+    assert!(
+        ui.find("reproduce the bug").is_ok(),
+        "the live plan renders in the panel"
+    );
+}
+
+#[test]
+fn quest_artifact_changes_tab_hands_rows_to_the_diff_overlay() {
+    let mut state = State::new(Flags::default_app_server());
+    state.status = Status::Ready;
+    state.mode = AppMode::Quest;
+    apply_file_change(&mut state);
+    state.artifacts.tab = ArtifactTab::Changes;
+
+    let mut ui = simulator(view(&state));
+    assert!(
+        ui.find("src/main.rs").is_ok(),
+        "the changed file renders in the panel"
+    );
+
+    ui.click("src/main.rs").expect("the file row is clickable");
+
+    let messages: Vec<Message> = ui.into_messages().collect();
+    assert!(
+        messages
+            .iter()
+            .any(|message| matches!(message, Message::QuestArtifactFileOpened(0))),
+        "clicking the row emits QuestArtifactFileOpened, got {messages:?}"
     );
 }
 

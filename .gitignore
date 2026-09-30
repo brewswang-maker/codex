@@ -125,3 +125,9 @@ __pycache__/
 # Local scratch material at the repository root
 /.tmp_probe/
 /canvas-staging/
+
+# Local reference project checkouts at the repository root
+/hypit/
+/hypit-rs/
+/lumenx/
+/manju/

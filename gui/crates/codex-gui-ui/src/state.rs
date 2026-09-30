@@ -2,6 +2,7 @@
 
 use crate::attachments::Attachments;
 use crate::message::AppMode;
+use crate::message::ArtifactTab;
 use crate::message::MenuId;
 use crate::message::QuestScenario;
 use crate::message::SidebarTab;
@@ -26,9 +27,12 @@ use codex_gui_core::StatusBoard;
 use codex_gui_core::Transcript;
 use codex_gui_core::VendorCatalog;
 use iced::widget::markdown;
+use iced::widget::text_editor;
 use iced_swdir_tree::DirectoryTree;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -96,6 +100,26 @@ impl QuestOverlays {
             || self.rename.is_some()
             || self.board_open
             || self.workspace_menu
+    }
+}
+
+/// The Quest artifact panel: the task dialog's right-hand column with
+/// the live plan (Spec) and the changed files.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuestArtifacts {
+    /// Whether the panel is part of the Quest layout.
+    pub open: bool,
+    /// Which tab is on screen.
+    pub tab: ArtifactTab,
+}
+
+impl Default for QuestArtifacts {
+    fn default() -> Self {
+        // The reference's Quest shell opens with the output column up.
+        Self {
+            open: true,
+            tab: ArtifactTab::Spec,
+        }
     }
 }
 
@@ -263,13 +287,35 @@ pub struct State {
     pub sidebar_tab: SidebarTab,
     /// The shell currently on screen.
     pub mode: AppMode,
+    /// Whether the left rail (the editor sidebar or the Quest rail) is
+    /// part of the layout.
+    pub left_rail_open: bool,
+    /// The Quest artifact panel state (right Spec / changed-files column).
+    pub artifacts: QuestArtifacts,
     /// The open top-menu dropdown, when any.
     pub menu: Option<MenuId>,
     /// Arrival time (unix seconds) per user-message entry id, stamped by
     /// the update loop for the transcript timestamps.
     pub user_times: HashMap<String, i64>,
-    /// The message id whose copy button shows "copied" feedback.
-    pub copied_id: Option<String>,
+    /// Feedback key of the button currently showing its "copied" badge; a
+    /// timed
+    /// [`CopyFeedbackExpired`](crate::message::Message::CopyFeedbackExpired)
+    /// clears it. Message copies key by entry id, code-block copies by a
+    /// content hash.
+    pub copied_key: Option<String>,
+    /// The transcript entry the pointer is over; user-message actions
+    /// (copy, edit) only render while their message is hovered.
+    pub hovered_message: Option<String>,
+    /// The transcript's active drag selection (a partial-text highlight),
+    /// if any. Esc or a click elsewhere clears it; Ctrl+C copies it.
+    pub text_selection: Option<TextSelection>,
+    /// Monotonic id of the latest drag selection; line widgets report
+    /// their plain text once per epoch so a fresh drag always re-reports.
+    pub selection_epoch: u64,
+    /// The inline editor draft while the user rewrites a sent message.
+    pub editing: Option<EditDraft>,
+    /// A submitted edit waiting on its fork/resume chain.
+    pub pending_edit: Option<PendingEdit>,
     /// Like/dislike per agent-message id; absent means no reaction.
     pub reactions: HashMap<String, crate::message::Reaction>,
     /// Ids of command tool cards currently showing their output well.
@@ -311,6 +357,10 @@ pub struct State {
     pub plan_overlay_open: bool,
     /// Commit-composer overlay state.
     pub git_overlay: GitOverlayState,
+    /// Composer ✨ prompt-optimizer state.
+    pub prompt_optimize: PromptOptimizeState,
+    /// Composer voice-input (dictation) state.
+    pub voice_input: VoiceInputState,
     /// Command palette visibility and query.
     pub palette: PaletteState,
     /// Transcript search bar state.
@@ -409,6 +459,314 @@ pub enum GitOverlayStatus {
     Failed(String),
 }
 
+/// The composer's ✨ prompt-optimizer state (borrowed from Qoder's
+/// "优化输入"): one throwaway thread rewrites the draft into a
+/// structured, actionable prompt.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PromptOptimizeState {
+    /// The throwaway thread running the rewrite.
+    pub thread: Option<String>,
+    /// The draft captured when the rewrite started; kept after the
+    /// rewrite lands so the user can undo it.
+    pub original: Option<String>,
+    /// Where the optimizer stands.
+    pub status: PromptOptimizeStatus,
+}
+
+impl PromptOptimizeState {
+    /// Whether a rewrite turn is still running.
+    pub fn running(&self) -> bool {
+        matches!(self.status, PromptOptimizeStatus::Running)
+    }
+
+    /// Whether the composer currently shows an optimized rewrite that
+    /// can be rolled back.
+    pub fn undo_available(&self) -> bool {
+        self.original.is_some()
+    }
+}
+
+/// The prompt-optimizer lifecycle.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum PromptOptimizeStatus {
+    /// Nothing running.
+    #[default]
+    Idle,
+    /// The rewrite turn is running on the throwaway thread.
+    Running,
+    /// The last rewrite failed; the payload is the reason.
+    Failed(String),
+}
+
+/// The composer's voice-input (dictation) state, aligned with Qoder's
+/// Ctrl+Shift+V form: transcription only, never a live voice conversation.
+///
+/// Live text is appended after `anchor`; the composer tail from the anchor
+/// on is rebuilt from `finalized` + `current`, so a finalized part can
+/// refine the deltas that preceded it without duplicating text.
+#[derive(Debug, Default)]
+pub struct VoiceInputState {
+    /// Where dictation stands.
+    pub status: VoiceInputStatus,
+    /// The throwaway thread the realtime session runs on.
+    pub thread: Option<String>,
+    /// Composer char offset the transcription anchors to.
+    pub anchor: usize,
+    /// Text of transcript parts already finalized by `TranscriptDone`.
+    pub finalized: String,
+    /// Live deltas of the in-flight transcript part.
+    pub current: String,
+    /// Recording-indicator heartbeat phase.
+    pub pulse: bool,
+    /// Signals the voice task to tear down (capture, session, thread).
+    pub stop: Option<tokio::sync::oneshot::Sender<()>>,
+}
+
+impl VoiceInputState {
+    /// Whether the dictation pipeline owns the composer and the mic right
+    /// now (starting, live, or tearing down).
+    pub fn active(&self) -> bool {
+        matches!(
+            self.status,
+            VoiceInputStatus::Starting | VoiceInputStatus::Recording | VoiceInputStatus::Stopping
+        )
+    }
+
+    /// Whether the microphone is live.
+    pub fn recording(&self) -> bool {
+        matches!(self.status, VoiceInputStatus::Recording)
+    }
+
+    /// Re-anchors the transcription at the end of the composer and drops
+    /// the previous run's text; used when a session starts and whenever
+    /// the user edits mid-dictation (the edit becomes part of the prefix).
+    pub fn reanchor(&mut self, composer: &str) {
+        self.anchor = composer.chars().count();
+        self.finalized.clear();
+        self.current.clear();
+    }
+
+    /// Applies one live delta: appended to the in-flight part, then the
+    /// composer tail is rebuilt.
+    pub fn apply_delta(&mut self, delta: &str, composer: &mut String) {
+        self.current.push_str(delta);
+        self.rebuild(composer);
+    }
+
+    /// Ends the in-flight part with its finalized text (which may refine
+    /// the deltas it supersedes), then rebuilds the composer tail.
+    pub fn apply_done(&mut self, text: &str, composer: &mut String) {
+        self.finalized.push_str(text);
+        self.current.clear();
+        self.rebuild(composer);
+    }
+
+    /// Rebuilds the composer from its anchor prefix plus the transcript.
+    fn rebuild(&self, composer: &mut String) {
+        let byte_end = composer
+            .char_indices()
+            .nth(self.anchor)
+            .map(|(byte, _)| byte)
+            .unwrap_or(composer.len());
+        composer.truncate(byte_end);
+        composer.push_str(&self.finalized);
+        composer.push_str(&self.current);
+    }
+}
+
+/// The dictation lifecycle.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum VoiceInputStatus {
+    /// Nothing running.
+    #[default]
+    Idle,
+    /// Opening the throwaway thread and the realtime session.
+    Starting,
+    /// The microphone is live and transcript text is streaming in.
+    Recording,
+    /// The user asked to stop; the pipeline is tearing down.
+    Stopping,
+    /// The last attempt failed; the payload is the reason.
+    Failed(String),
+}
+
+/// One end of a drag selection: the identity of the text line the
+/// pointer was over, plus the byte offset inside that line's plain text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionPoint {
+    /// Line identity (`md:{message}:{block}:{line}` for agent markdown,
+    /// `user:{message}:{line}` for user bubbles).
+    pub key: String,
+    /// The byte offset inside the line's plain text.
+    pub offset: usize,
+}
+
+/// The transcript's drag selection: the anchor where the drag started,
+/// the focus under the pointer, and the plain text of every line the
+/// selection covers (reported by the line widgets, keyed by line).
+///
+/// A selection never crosses message boundaries: focus updates from other
+/// messages are dropped, so the anchor's message stays the owning one and
+/// each line's highlight range is computable from the two points alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextSelection {
+    /// Where the drag started.
+    pub anchor: SelectionPoint,
+    /// Where the pointer is now.
+    pub focus: SelectionPoint,
+    /// Monotonic id shared with the line widgets; a covered line reports
+    /// its plain text once per epoch, so a fresh drag re-reports.
+    pub epoch: u64,
+    /// Plain text per covered line key, as reported by the widgets.
+    pub lines: BTreeMap<String, String>,
+}
+
+impl TextSelection {
+    /// The message namespace the selection lives in (`md:{message}` or
+    /// `user:{message}`).
+    pub fn message(&self) -> Option<&str> {
+        parse_line_key(&self.anchor.key).map(|(namespace, _, _)| namespace)
+    }
+
+    /// Whether a focus point belongs to the anchor's message; points from
+    /// other messages would drag the selection across the transcript.
+    pub fn accepts(&self, point: &SelectionPoint) -> bool {
+        parse_line_key(&point.key).map(|(namespace, _, _)| namespace) == self.message()
+    }
+
+    /// The byte range `key` should paint, given that line's content
+    /// length. `None` when the line sits outside the selection.
+    pub fn range_for(&self, key: &str, content_len: usize) -> Option<Range<usize>> {
+        let (namespace, block, line) = parse_line_key(key)?;
+        let (anchor_namespace, anchor_block, anchor_line) = parse_line_key(&self.anchor.key)?;
+        let (focus_namespace, focus_block, focus_line) = parse_line_key(&self.focus.key)?;
+        if namespace != anchor_namespace || namespace != focus_namespace {
+            return None;
+        }
+
+        let anchor = (anchor_block, anchor_line);
+        let focus = (focus_block, focus_line);
+        let (start, end, start_offset, end_offset) = if anchor <= focus {
+            (anchor, focus, self.anchor.offset, self.focus.offset)
+        } else {
+            (focus, anchor, self.focus.offset, self.anchor.offset)
+        };
+
+        let position = (block, line);
+        if position < start || position > end {
+            return None;
+        }
+
+        let (lo, hi) = if position == start && position == end {
+            (start_offset.min(end_offset), start_offset.max(end_offset))
+        } else if position == start {
+            (start_offset, content_len)
+        } else if position == end {
+            (0, end_offset)
+        } else {
+            (0, content_len)
+        };
+        let lo = lo.min(content_len);
+        let hi = hi.min(content_len);
+
+        (lo < hi).then_some(lo..hi)
+    }
+
+    /// Assembles the clipboard payload from the reported line texts, in
+    /// document order; skipped line numbers keep their blank lines, and
+    /// block boundaries join with a single newline.
+    pub fn text(&self) -> Option<String> {
+        let mut rows = Vec::new();
+        for (key, text) in &self.lines {
+            if let Some((_, block, line)) = parse_line_key(key) {
+                rows.push((block, line, key.as_str(), text.as_str()));
+            }
+        }
+        rows.sort_by_key(|(block, line, ..)| (*block, *line));
+
+        let mut payload = String::new();
+        let mut previous: Option<(usize, usize)> = None;
+        for (block, line, key, text) in rows {
+            let Some(range) = self.range_for(key, text.len()) else {
+                continue;
+            };
+            let Some(slice) = text.get(range) else {
+                continue;
+            };
+            if let Some((previous_block, previous_line)) = previous {
+                let breaks = if previous_block == block {
+                    line.saturating_sub(previous_line).max(1)
+                } else {
+                    1
+                };
+                payload.push_str(&"\n".repeat(breaks));
+            }
+            payload.push_str(slice);
+            previous = Some((block, line));
+        }
+
+        (!payload.is_empty()).then_some(payload)
+    }
+}
+
+/// Splits a line key into `(namespace, block, line)`: agent markdown keys
+/// are `md:{message}:{block}:{line}`, user-bubble keys are
+/// `user:{message}:{line}` (a single implicit block). The namespace keeps
+/// its `md:`/`user:` scheme so the two families never collide.
+pub fn parse_line_key(key: &str) -> Option<(&str, usize, usize)> {
+    if let Some(rest) = key.strip_prefix("md:") {
+        let (rest, line) = rest.rsplit_once(':')?;
+        let (message, block) = rest.rsplit_once(':')?;
+        let block = block.parse().ok()?;
+        let line = line.parse().ok()?;
+        // `message` is a subslice of `key`; widening it back over the
+        // scheme keeps markdown namespaces distinct from user ones.
+        Some((&key[..message.len() + 3], block, line))
+    } else {
+        let rest = key.strip_prefix("user:")?;
+        let (message, line) = rest.rsplit_once(':')?;
+        let line = line.parse().ok()?;
+        Some((&key[..message.len() + 5], 0, line))
+    }
+}
+
+/// One open in-place edit of an already-sent user message.
+pub struct EditDraft {
+    /// The transcript entry id being rewritten; the fork point is its
+    /// turn, looked up in the transcript at submit time.
+    pub message_id: String,
+    /// Attachment paths carried by the original message, resent as-is.
+    pub images: Vec<PathBuf>,
+    /// The multiline editor buffer, seeded with the original text.
+    pub content: text_editor::Content,
+}
+
+impl std::fmt::Debug for EditDraft {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `text_editor::Content` is not `Debug`; project it down to its
+        // text instead.
+        f.debug_struct("EditDraft")
+            .field("message_id", &self.message_id)
+            .field("images", &self.images)
+            .field("text", &self.content.text())
+            .finish()
+    }
+}
+
+/// A submitted edit waiting on its thread fork to land: the fork runs
+/// first, then the new thread resumes (history below the edited message),
+/// then the rewritten prompt goes out as a fresh turn.
+#[derive(Debug)]
+pub struct PendingEdit {
+    /// The fork's thread id; `None` while `thread/fork` is in flight,
+    /// set once it settles.
+    pub forked_thread_id: Option<String>,
+    /// The rewritten prompt to send.
+    pub text: String,
+    /// Attachment paths to resend with the prompt.
+    pub images: Vec<PathBuf>,
+}
+
 impl std::fmt::Debug for State {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // `DirectoryTree` is not `Debug`; project it down to its root.
@@ -438,9 +796,18 @@ impl std::fmt::Debug for State {
             .field("editor_tabs", &self.editor.tabs.len())
             .field("sidebar_tab", &self.sidebar_tab)
             .field("mode", &self.mode)
+            .field("left_rail_open", &self.left_rail_open)
+            .field("artifacts", &self.artifacts)
             .field("menu", &self.menu)
             .field("user_times", &self.user_times.len())
-            .field("copied_id", &self.copied_id)
+            .field("copied_key", &self.copied_key)
+            .field("hovered_message", &self.hovered_message)
+            .field("text_selection", &self.text_selection)
+            .field(
+                "editing",
+                &self.editing.as_ref().map(|draft| draft.message_id.clone()),
+            )
+            .field("pending_edit", &self.pending_edit)
             .field("reactions", &self.reactions)
             .field("expanded_commands", &self.expanded_commands.len())
             .field("recents", &self.recents.entries().len())
@@ -459,6 +826,8 @@ impl std::fmt::Debug for State {
             )
             .field("plan_overlay", &self.plan_overlay_open)
             .field("git_overlay", &self.git_overlay)
+            .field("prompt_optimize", &self.prompt_optimize)
+            .field("voice_input", &self.voice_input)
             .field("palette", &self.palette)
             .field("chat_search", &self.chat_search)
             .field("quest", &self.quest)
@@ -513,9 +882,16 @@ impl State {
             // Qoder's editor shell opens on the file tree, not the chat list.
             sidebar_tab: SidebarTab::Files,
             mode: AppMode::Editor,
+            left_rail_open: true,
+            artifacts: QuestArtifacts::default(),
             menu: None,
             user_times: HashMap::new(),
-            copied_id: None,
+            copied_key: None,
+            hovered_message: None,
+            text_selection: None,
+            selection_epoch: 0,
+            editing: None,
+            pending_edit: None,
             reactions: HashMap::new(),
             expanded_commands: BTreeSet::new(),
             recents: RecentProjects::load(RecentProjects::default_path()),
@@ -534,6 +910,8 @@ impl State {
             diff_selected: None,
             plan_overlay_open: false,
             git_overlay: GitOverlayState::default(),
+            prompt_optimize: PromptOptimizeState::default(),
+            voice_input: VoiceInputState::default(),
             palette: PaletteState::default(),
             chat_search: ChatSearch::default(),
             quest: QuestOverlays::default(),
@@ -553,11 +931,18 @@ impl State {
     }
 
     /// Whether the composer may submit a new turn: text, pending image
-    /// attachments, or both.
+    /// attachments, or both - and no composer-side automation (prompt
+    /// optimizer, dictation) holding the draft.
     pub fn can_submit(&self) -> bool {
         self.client.is_some()
             && self.thread_id.is_some()
             && matches!(self.status, Status::Ready)
+            && !self.prompt_optimize.running()
+            && !self.voice_input.active()
             && (!self.composer.trim().is_empty() || !self.attachments.images.is_empty())
     }
 }
+
+#[cfg(test)]
+#[path = "state_tests.rs"]
+mod tests;

@@ -8,7 +8,12 @@ publish.workspace = true
 
 [dependencies]
 codex-app-server-protocol = { path = "../../../codex-rs/app-server-protocol" }
+# Microphone capture (voice input). Linux links ALSA via pkg-config: install
+# libasound2-dev (Debian/Ubuntu), alsa-lib-devel (Fedora), or provide an
+# equivalent alsa.pc; macOS/Windows frameworks are built in.
+cpal.workspace = true
 serde_json.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 pretty_assertions = "1"

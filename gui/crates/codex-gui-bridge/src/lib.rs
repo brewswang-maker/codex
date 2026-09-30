@@ -18,11 +18,16 @@ mod codec;
 mod error;
 mod events;
 mod process;
+pub mod realtime;
 mod run;
 
 #[cfg(test)]
 #[path = "codec_tests.rs"]
 mod codec_tests;
+
+#[cfg(test)]
+#[path = "realtime_tests.rs"]
+mod realtime_tests;
 
 pub use client::Client;
 pub use codec::{decode_line, encode_line};

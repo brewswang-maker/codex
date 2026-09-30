@@ -110,8 +110,17 @@ pub fn quest_header(state: &State) -> Element<'_, Message> {
         );
     }
 
+    header = header.push(Space::new().width(Fill));
+    // The artifact entry only shows once the quest has produced content.
+    if !state.transcript.entries().is_empty() || state.transcript.plan().is_some() {
+        header = header.push(
+            button(text("产物").size(theme::SIZE_SM).style(theme::fg))
+                .padding([4, 10])
+                .style(theme::ghost_button)
+                .on_press(Message::QuestArtifactsToggled),
+        );
+    }
     header = header
-        .push(Space::new().width(Fill))
         .push(
             button(text("看板").size(theme::SIZE_SM).style(theme::fg))
                 .padding([4, 10])

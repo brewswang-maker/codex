@@ -7,11 +7,21 @@
 //! - `basic-turn`: answers `initialize`, `thread/start`, and `turn/start`;
 //!   after `turn/start` it streams a commandExecution item followed by an
 //!   agentMessage item with deltas.
+//! - `markdown-turn`: like `basic-turn`, but the agentMessage streams rich
+//!   Markdown (heading, bold paragraph, code block, list) so transcript
+//!   selection can be exercised over every block type.
 //! - `approval`: same, but after `turn/start` it first emits a
 //!   command-execution approval request and holds the item stream back until
 //!   the GUI's decision reply arrives, mirroring the real gating.
 //! - `error`: answers `initialize`, `thread/start`, and `turn/start`, but
 //!   then emits an `error` notification instead of any item stream.
+//! - `resume-fail`: `thread/resume` rejects with "no rollout found" (the
+//!   session is gone server-side) while `thread/start` keeps answering, so
+//!   clients that fall back from resume to start can be exercised.
+//! - `resume-active`: like the default `thread/resume` reply, but the thread
+//!   is `active` and its last turn is still `inProgress`, mirroring a session
+//!   whose turn was running when the client quit; clients must restore the
+//!   running state instead of reporting idle.
 //!
 //! Independently of the scenario, the plugin/marketplace family the Skill
 //! market tab speaks is served too: `plugin/list` and `plugin/read` describe
@@ -118,13 +128,26 @@ fn main() {
                 }),
             ),
             "thread/resume" => {
-                let thread_id = message["params"]["threadId"]
-                    .as_str()
-                    .unwrap_or("thread-1")
-                    .to_string();
-                let mut thread = thread_json(&thread_id, "resumable conversation");
-                thread["turns"] = serde_json::json!([
-                    {
+                if scenario == "resume-fail" {
+                    // 模拟服务端已无该会话（rollout 被清理/换环境）：驱动
+                    // 客户端「resume 失败 → 回退 thread/start」的路径。
+                    write_frame(
+                        &mut stdout,
+                        serde_json::json!({
+                            "id": id,
+                            "error": {
+                                "code": -32600,
+                                "message": "no rollout found for thread id"
+                            }
+                        }),
+                    );
+                } else {
+                    let thread_id = message["params"]["threadId"]
+                        .as_str()
+                        .unwrap_or("thread-1")
+                        .to_string();
+                    let mut thread = thread_json(&thread_id, "resumable conversation");
+                    let mut turns = vec![serde_json::json!({
                         "id": "turn-h1",
                         "items": [
                             {
@@ -134,41 +157,56 @@ fn main() {
                                     {"type": "text", "text": "hello from history", "textElements": []}
                                 ]
                             },
-                            {"type": "agentMessage", "id": "item-h2", "text": "History replay"}
+                            {"type": "agentMessage", "id": "item-h2", "text": RESUME_TURN_TEXT}
                         ],
                         "status": "completed",
                         "error": null,
                         "startedAt": null,
                         "completedAt": null,
                         "durationMs": null
+                    })];
+                    if scenario == "resume-active" {
+                        // 模拟客户端退出时正在运行、服务端仍在恢复运行的
+                        // 回合：线程 active、最后一回合 inProgress。
+                        thread["status"] = serde_json::json!({"type": "active", "activeFlags": []});
+                        turns.push(serde_json::json!({
+                            "id": "turn-live",
+                            "items": [],
+                            "status": "inProgress",
+                            "error": null,
+                            "startedAt": null,
+                            "completedAt": null,
+                            "durationMs": null
+                        }));
                     }
-                ]);
-                write_frame(
-                    &mut stdout,
-                    serde_json::json!({
-                        "id": id,
-                        "result": {
-                            "thread": thread,
-                            "model": "mock-model",
-                            "modelProvider": "mock",
-                            "serviceTier": null,
-                            "disabledPluginIds": [],
-                            "cwd": "/tmp",
-                            "runtimeWorkspaceRoots": [],
-                            "instructionSources": [],
-                            "approvalPolicy": "on-request",
-                            "approvalsReviewer": "user",
-                            "sandbox": {"type": "readOnly"},
-                            "activePermissionProfile": null,
-                            "reasoningEffort": null,
-                            "collaborationMode": null,
-                            "multiAgentMode": "explicitRequestOnly",
-                            "initialTurnsPage": null,
-                            "turnsBackwardsCursor": null,
-                            "itemsBackwardsCursor": null
-                        }
-                    }),
-                );
+                    thread["turns"] = serde_json::Value::Array(turns);
+                    write_frame(
+                        &mut stdout,
+                        serde_json::json!({
+                            "id": id,
+                            "result": {
+                                "thread": thread,
+                                "model": "mock-model",
+                                "modelProvider": "mock",
+                                "serviceTier": null,
+                                "disabledPluginIds": [],
+                                "cwd": "/tmp",
+                                "runtimeWorkspaceRoots": [],
+                                "instructionSources": [],
+                                "approvalPolicy": "on-request",
+                                "approvalsReviewer": "user",
+                                "sandbox": {"type": "readOnly"},
+                                "activePermissionProfile": null,
+                                "reasoningEffort": null,
+                                "collaborationMode": null,
+                                "multiAgentMode": "explicitRequestOnly",
+                                "initialTurnsPage": null,
+                                "turnsBackwardsCursor": null,
+                                "itemsBackwardsCursor": null
+                            }
+                        }),
+                    );
+                }
             }
             "thread/archive" => {
                 write_frame(&mut stdout, serde_json::json!({"id": id, "result": {}}));
@@ -507,6 +545,8 @@ fn main() {
                         }),
                     );
                     awaiting_decision = true;
+                } else if scenario == "markdown-turn" {
+                    run_markdown_item_stream(&mut stdout);
                 } else {
                     run_item_stream(&mut stdout);
                 }
@@ -604,6 +644,92 @@ fn run_item_stream(stdout: &mut std::io::Stdout) {
             "method": "item/completed",
             "params": {
                 "item": {"type": "agentMessage", "id": "item-1", "text": "Hello world"},
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "completedAtMs": 2
+            }
+        }),
+    );
+}
+
+/// The Markdown body streamed by the `markdown-turn` scenario: one of
+/// every selectable block type (heading, paragraph, code block, list).
+const MARKDOWN_TURN_TEXT: &str = "# Result\n\nThe fix uses **bold** text.\n\n```rust\nfn main() {\n    println!(\"hello\");\n}\n```\n\n- first item\n- second item";
+
+/// The historical agent reply replayed by `thread/resume`: one of every
+/// selectable block type (heading, paragraph, list, quote, code block,
+/// table, task list) so resumed transcripts exercise the same render
+/// paths as streamed ones.
+const RESUME_TURN_TEXT: &str = r#"# History replay
+
+The fix updates **two files** and passes all tests.
+
+## Files changed
+
+- `src/main.rs` adds the retry loop
+- `src/lib.rs` exposes `retry()`
+
+> Retries are capped at three attempts.
+
+```rust
+fn retry() {
+    println!("retry");
+}
+```
+
+| step | status |
+| ---- | ------ |
+| build | done |
+| test | done |
+
+- [x] build passes
+- [ ] docs updated
+"#;
+
+/// Streams the `markdown-turn` agentMessage: rich Markdown blocks with
+/// per-fragment deltas, mirroring the real streaming shape.
+fn run_markdown_item_stream(stdout: &mut std::io::Stdout) {
+    write_frame(
+        stdout,
+        serde_json::json!({
+            "method": "item/started",
+            "params": {
+                "item": {"type": "agentMessage", "id": "item-1", "text": ""},
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "startedAtMs": 1
+            }
+        }),
+    );
+    for delta in [
+        "# Result\n\n",
+        "The fix uses **bold** text.\n\n",
+        "```rust\n",
+        "fn main() {\n",
+        "    println!(\"hello\");\n",
+        "}\n```\n\n",
+        "- first item\n",
+        "- second item",
+    ] {
+        write_frame(
+            stdout,
+            serde_json::json!({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": "thread-1",
+                    "turnId": "turn-1",
+                    "itemId": "item-1",
+                    "delta": delta
+                }
+            }),
+        );
+    }
+    write_frame(
+        stdout,
+        serde_json::json!({
+            "method": "item/completed",
+            "params": {
+                "item": {"type": "agentMessage", "id": "item-1", "text": MARKDOWN_TURN_TEXT},
                 "threadId": "thread-1",
                 "turnId": "turn-1",
                 "completedAtMs": 2

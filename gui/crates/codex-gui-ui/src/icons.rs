@@ -39,12 +39,18 @@ pub enum IconKind {
     GitBranch,
     /// Copy (two stacked rectangles).
     Copy,
+    /// Checkmark (copy/copied feedback).
+    Check,
+    /// Pencil (edit a sent message).
+    Edit,
     /// Thumbs-up feedback.
     ThumbUp,
     /// Thumbs-down feedback.
     ThumbDown,
     /// Paperclip for the composer attach action.
     Paperclip,
+    /// Microphone for the composer voice-input action.
+    Microphone,
     /// Source-control rail entry (branch with change dot).
     SourceControl,
     /// Repo Wiki rail entry (closed book).
@@ -287,6 +293,27 @@ impl<Message> canvas::Program<Message> for Icon {
                     stroke,
                 );
             }
+            IconKind::Check => {
+                frame.stroke(
+                    &polyline(&[(4.5, 12.5), (10.0, 18.0), (19.5, 6.5)], k),
+                    stroke,
+                );
+            }
+            IconKind::Edit => {
+                // Pencil: a slanted body with a chisel tip.
+                frame.stroke(
+                    &Path::new(|p| {
+                        p.move_to(point(4.5, 17.5, k));
+                        p.line_to(point(16.5, 5.5, k));
+                        p.line_to(point(18.5, 7.5, k));
+                        p.line_to(point(6.5, 19.5, k));
+                        p.line_to(point(3.5, 20.5, k));
+                        p.close();
+                    }),
+                    stroke,
+                );
+                frame.stroke(&line(4.5, 17.5, 6.5, 19.5, k), stroke);
+            }
             IconKind::Paperclip => {
                 // Classic paperclip: one long leg, a bottom U-turn, and the
                 // inner leg folding back with a small hook.
@@ -303,6 +330,26 @@ impl<Message> canvas::Program<Message> for Icon {
                     }),
                     stroke,
                 );
+            }
+            IconKind::Microphone => {
+                // Condenser mic: capsule body, cradle arc, stem.
+                frame.stroke(
+                    &Path::rounded_rectangle(
+                        point(9.0, 3.0, k),
+                        Size::new(6.0 * k, 11.0 * k),
+                        (3.0 * k).into(),
+                    ),
+                    stroke,
+                );
+                frame.stroke(
+                    &Path::new(|p| {
+                        p.move_to(point(5.5, 11.5, k));
+                        p.quadratic_curve_to(point(5.5, 18.5, k), point(12.0, 18.5, k));
+                        p.quadratic_curve_to(point(18.5, 18.5, k), point(18.5, 11.5, k));
+                    }),
+                    stroke,
+                );
+                frame.stroke(&line(12.0, 18.5, 12.0, 21.0, k), stroke);
             }
             IconKind::ThumbUp | IconKind::ThumbDown => {
                 let up = self.kind == IconKind::ThumbUp;

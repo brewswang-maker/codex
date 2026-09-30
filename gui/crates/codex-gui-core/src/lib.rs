@@ -5,6 +5,7 @@
 //! The UI layer renders whatever [`Transcript`] holds.
 
 mod approvals;
+mod audio_capture;
 mod compose;
 mod elicitation;
 mod git_info;
@@ -78,6 +79,11 @@ pub use approvals::ApprovalKind;
 pub use approvals::Approvals;
 pub use approvals::Decision;
 pub use approvals::PendingApproval;
+pub use audio_capture::AudioChunk;
+pub use audio_capture::Capture;
+pub use audio_capture::CaptureError;
+pub use audio_capture::TARGET_SAMPLE_RATE;
+pub use audio_capture::start as start_audio_capture;
 pub use compose::compose_inputs;
 pub use elicitation::ElicitationDraft;
 pub use elicitation::Elicitations;

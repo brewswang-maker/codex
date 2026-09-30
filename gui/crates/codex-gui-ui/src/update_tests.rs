@@ -1,7 +1,9 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
+use super::next_thread;
 use super::update;
 use crate::message::AppMode;
+use crate::message::ArtifactTab;
 use crate::message::Bootstrap;
 use crate::message::MenuId;
 use crate::message::Message;
@@ -656,22 +658,166 @@ fn copy_message_records_the_feedback_target() {
     let _ = update(
         &mut state,
         Message::CopyMessage {
-            id: String::from("m1"),
+            key: String::from("msg:m1"),
             text: String::from("hello world"),
         },
     );
 
-    assert_eq!(state.copied_id.as_deref(), Some("m1"));
+    assert_eq!(state.copied_key.as_deref(), Some("msg:m1"));
 
     // A later copy moves the feedback along.
     let _ = update(
         &mut state,
         Message::CopyMessage {
-            id: String::from("m2"),
+            key: String::from("msg:m2"),
             text: String::from("again"),
         },
     );
-    assert_eq!(state.copied_id.as_deref(), Some("m2"));
+    assert_eq!(state.copied_key.as_deref(), Some("msg:m2"));
+
+    // The expiry of an older copy must not clear the newer badge.
+    let _ = update(
+        &mut state,
+        Message::CopyFeedbackExpired(String::from("msg:m1")),
+    );
+    assert_eq!(state.copied_key.as_deref(), Some("msg:m2"));
+
+    let _ = update(
+        &mut state,
+        Message::CopyFeedbackExpired(String::from("msg:m2")),
+    );
+    assert_eq!(state.copied_key, None);
+}
+
+/// Seeds one user message through the live notification stream, the way
+/// an arriving turn surfaces it.
+fn seed_user_message(state: &mut State, id: &str, turn_id: &str, text: &str) {
+    let _ = update(
+        state,
+        Message::Event(notification(json!({
+            "method": "item/started",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": turn_id,
+                "startedAtMs": 0,
+                "item": {
+                    "type": "userMessage",
+                    "id": id,
+                    "clientId": null,
+                    "content": [{"type": "text", "text": text}]
+                }
+            }
+        }))),
+    );
+}
+
+#[test]
+fn edit_started_seeds_the_draft_and_retires_the_hover() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_user_message(&mut state, "um-1", "turn-1", "first draft");
+    state.hovered_message = Some(String::from("um-1"));
+
+    let _ = update(&mut state, Message::EditStarted(String::from("um-1")));
+
+    let draft = state.editing.as_ref().expect("the editor opens");
+    assert_eq!(draft.message_id, "um-1");
+    assert_eq!(draft.content.text(), "first draft");
+    assert_eq!(state.hovered_message, None, "the hover bar is retired");
+
+    let _ = update(&mut state, Message::EditCancelled);
+    assert!(state.editing.is_none());
+}
+
+#[test]
+fn edit_started_needs_a_known_message_and_an_idle_turn() {
+    let mut state = State::new(Flags::default_app_server());
+
+    // An unknown message id cannot open an editor.
+    let _ = update(&mut state, Message::EditStarted(String::from("missing")));
+    assert!(state.editing.is_none());
+
+    seed_user_message(&mut state, "um-1", "turn-1", "hello");
+    state.active_turn = Some(String::from("turn-1"));
+
+    // A streaming turn must finish first; the refusal surfaces as a banner.
+    let _ = update(&mut state, Message::EditStarted(String::from("um-1")));
+    assert!(state.editing.is_none());
+    assert_eq!(
+        state
+            .status_board
+            .error()
+            .map(|banner| banner.message.as_str()),
+        Some("wait for the running turn to finish before editing a message")
+    );
+}
+
+#[test]
+fn edit_submitted_forks_before_the_message_turn() {
+    let mut state = State::new(Flags::default_app_server());
+    state.thread_id = Some(String::from("thread-1"));
+    let (outbound, _frames) = tokio::sync::mpsc::channel(8);
+    state.client = Some(codex_gui_bridge::Client::new(outbound));
+    seed_user_message(&mut state, "um-1", "turn-1", "old prompt");
+
+    let _ = update(&mut state, Message::EditStarted(String::from("um-1")));
+    let _ = update(&mut state, Message::EditSubmitted);
+
+    let pending = state.pending_edit.as_ref().expect("the fork is in flight");
+    assert_eq!(pending.text, "old prompt");
+    assert_eq!(pending.forked_thread_id, None);
+
+    // A second submit while the fork is in flight is a no-op.
+    let _ = update(&mut state, Message::EditSubmitted);
+    assert_eq!(
+        state
+            .pending_edit
+            .as_ref()
+            .map(|pending| pending.text.as_str()),
+        Some("old prompt")
+    );
+}
+
+#[test]
+fn resumed_fork_resends_the_edited_prompt() {
+    let mut state = State::new(Flags::default_app_server());
+    state.thread_id = Some(String::from("thread-1"));
+    let (outbound, _frames) = tokio::sync::mpsc::channel(8);
+    state.client = Some(codex_gui_bridge::Client::new(outbound));
+    seed_user_message(&mut state, "um-1", "turn-1", "old prompt");
+    let _ = update(&mut state, Message::EditStarted(String::from("um-1")));
+    let _ = update(&mut state, Message::EditSubmitted);
+    if let Some(pending) = state.pending_edit.as_mut() {
+        pending.forked_thread_id = Some(String::from("fork-1"));
+    }
+
+    // Resuming an unrelated thread leaves the pending edit alone.
+    let _ = update(
+        &mut state,
+        Message::SessionResumed(Ok(SessionHistory {
+            thread_id: String::from("other"),
+            model_provider: String::from("glm"),
+            model: String::from("glm-5.3"),
+            cwd: String::from("/tmp"),
+            turns: Vec::new(),
+        })),
+    );
+    assert!(state.pending_edit.is_some());
+
+    // The fork's own resume hands the rewritten prompt to the submit path.
+    let _ = update(
+        &mut state,
+        Message::SessionResumed(Ok(SessionHistory {
+            thread_id: String::from("fork-1"),
+            model_provider: String::from("glm"),
+            model: String::from("glm-5.3"),
+            cwd: String::from("/tmp"),
+            turns: Vec::new(),
+        })),
+    );
+    assert!(state.pending_edit.is_none());
+    assert!(state.editing.is_none(), "the editor closes on success");
+    assert_eq!(state.thread_id.as_deref(), Some("fork-1"));
+    assert_eq!(state.status, Status::Thinking, "the prompt went back out");
 }
 
 #[test]
@@ -1587,6 +1733,439 @@ fn main_thread_traffic_still_flows_while_a_draft_is_running() {
 }
 
 #[test]
+fn optimize_thread_agent_message_replaces_the_composer() {
+    let mut state = State::new(Flags::default_app_server());
+    state.composer = String::from("帮我给设备列表加个搜索框");
+    state.prompt_optimize.thread = Some(String::from("opt-t"));
+    state.prompt_optimize.original = Some(String::from("帮我给设备列表加个搜索框"));
+    state.prompt_optimize.status = crate::state::PromptOptimizeStatus::Running;
+
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "item/completed",
+            "params": {
+                "item": {"type": "agentMessage", "id": "o1", "text": "目标：为设备列表添加搜索框\n验收：输入关键字可过滤"},
+                "threadId": "opt-t",
+                "turnId": "turn-o",
+                "completedAtMs": 2
+            }
+        }))),
+    );
+
+    assert_eq!(
+        state.composer,
+        "目标：为设备列表添加搜索框\n验收：输入关键字可过滤"
+    );
+    assert_eq!(
+        state.prompt_optimize.original,
+        Some(String::from("帮我给设备列表加个搜索框"))
+    );
+    assert!(state.prompt_optimize.thread.is_none());
+    assert_eq!(
+        state.prompt_optimize.status,
+        crate::state::PromptOptimizeStatus::Idle
+    );
+    // The rewrite never reached the main transcript.
+    assert!(state.transcript.entries().is_empty());
+}
+
+#[test]
+fn optimize_thread_deltas_stay_out_of_the_main_transcript() {
+    let mut state = State::new(Flags::default_app_server());
+    state.prompt_optimize.thread = Some(String::from("opt-t"));
+
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "item/started",
+            "params": {
+                "item": {"type": "agentMessage", "id": "o1", "text": ""},
+                "threadId": "opt-t",
+                "turnId": "turn-o",
+                "startedAtMs": 1
+            }
+        }))),
+    );
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "item/agentMessage/delta",
+            "params": {"threadId": "opt-t", "turnId": "turn-o", "itemId": "o1", "delta": "hi"}
+        }))),
+    );
+
+    assert!(state.transcript.entries().is_empty());
+    assert!(state.markdowns.is_empty());
+}
+
+#[test]
+fn optimize_turn_completed_without_a_message_fails() {
+    let mut state = State::new(Flags::default_app_server());
+    state.prompt_optimize.thread = Some(String::from("opt-t"));
+    state.prompt_optimize.original = Some(String::from("original"));
+    state.prompt_optimize.status = crate::state::PromptOptimizeStatus::Running;
+
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "opt-t",
+                "turn": {
+                    "id": "turn-o",
+                    "items": [],
+                    "status": "completed",
+                    "error": null,
+                    "startedAt": null,
+                    "completedAt": null,
+                    "durationMs": null
+                }
+            }
+        }))),
+    );
+
+    assert!(state.prompt_optimize.thread.is_none());
+    assert!(state.prompt_optimize.original.is_none());
+    assert_eq!(
+        state.prompt_optimize.status,
+        crate::state::PromptOptimizeStatus::Failed(String::from(
+            "optimize turn produced no message"
+        ))
+    );
+}
+
+#[test]
+fn optimize_undo_restores_the_original_draft() {
+    let mut state = State::new(Flags::default_app_server());
+    state.composer = String::from("rewritten prompt");
+    state.prompt_optimize.original = Some(String::from("raw draft"));
+
+    let _ = update(&mut state, Message::PromptOptimizeUndo);
+
+    assert_eq!(state.composer, "raw draft");
+    assert!(state.prompt_optimize.original.is_none());
+}
+
+#[test]
+fn composer_edit_retires_the_undo() {
+    let mut state = State::new(Flags::default_app_server());
+    state.prompt_optimize.original = Some(String::from("raw draft"));
+
+    let _ = update(
+        &mut state,
+        Message::ComposerChanged(String::from("typed over")),
+    );
+
+    assert_eq!(state.composer, "typed over");
+    assert!(state.prompt_optimize.original.is_none());
+}
+
+/// Arms one live dictation session on `v-t`, anchored after the composer's
+/// current content.
+fn seed_dictation(state: &mut State) {
+    state.composer = String::from("前缀：");
+    state.voice_input.thread = Some(String::from("v-t"));
+    state.voice_input.status = crate::state::VoiceInputStatus::Recording;
+    state.voice_input.reanchor(&state.composer);
+}
+
+#[test]
+fn voice_transcript_deltas_anchor_after_the_composer_prefix() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_dictation(&mut state);
+
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "thread/realtime/transcript/delta",
+            "params": {"threadId": "v-t", "role": "user", "delta": "你好"}
+        }))),
+    );
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "thread/realtime/transcript/delta",
+            "params": {"threadId": "v-t", "role": "user", "delta": "世界"}
+        }))),
+    );
+
+    assert_eq!(state.composer, "前缀：你好世界");
+    assert!(state.transcript.entries().is_empty());
+}
+
+#[test]
+fn voice_transcript_done_refines_the_in_flight_part() {
+    let mut state = State::new(Flags::default_app_server());
+    state.voice_input.thread = Some(String::from("v-t"));
+    state.voice_input.status = crate::state::VoiceInputStatus::Recording;
+    state.voice_input.reanchor(&state.composer);
+
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "thread/realtime/transcript/delta",
+            "params": {"threadId": "v-t", "role": "user", "delta": "你毫"}
+        }))),
+    );
+    assert_eq!(state.composer, "你毫");
+
+    // The finalized text supersedes the deltas it refines.
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "thread/realtime/transcript/done",
+            "params": {"threadId": "v-t", "role": "user", "text": "你好"}
+        }))),
+    );
+    assert_eq!(state.composer, "你好");
+
+    // A later part appends after the finalized one.
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "thread/realtime/transcript/delta",
+            "params": {"threadId": "v-t", "role": "user", "delta": "，世界"}
+        }))),
+    );
+    assert_eq!(state.composer, "你好，世界");
+}
+
+#[test]
+fn voice_assistant_role_never_reaches_the_composer() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_dictation(&mut state);
+
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "thread/realtime/transcript/delta",
+            "params": {"threadId": "v-t", "role": "assistant", "delta": "好的"}
+        }))),
+    );
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "thread/realtime/transcript/done",
+            "params": {"threadId": "v-t", "role": "assistant", "text": "好的，我来处理"}
+        }))),
+    );
+
+    assert_eq!(state.composer, "前缀：");
+}
+
+#[test]
+fn composer_edit_mid_dictation_reanchors_the_transcript() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_dictation(&mut state);
+
+    // The user keeps typing while the mic is live: the edit becomes part
+    // of the prefix instead of being clobbered by the next delta.
+    let _ = update(
+        &mut state,
+        Message::ComposerChanged(String::from("前缀：改过")),
+    );
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "thread/realtime/transcript/delta",
+            "params": {"threadId": "v-t", "role": "user", "delta": "好的"}
+        }))),
+    );
+
+    assert_eq!(state.composer, "前缀：改过好的");
+}
+
+#[test]
+fn voice_item_traffic_is_swallowed_for_the_dictation_thread() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_dictation(&mut state);
+
+    // Handoff requests and item churn on the voice thread must not reach
+    // the transcript, the plan, or the status bar.
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "thread/realtime/itemAdded",
+            "params": {
+                "threadId": "v-t",
+                "item": {"type": "handoff_request", "handoff_id": "h1", "input_transcript": "帮我加个搜索框"}
+            }
+        }))),
+    );
+
+    assert_eq!(state.composer, "前缀：");
+    assert!(state.transcript.entries().is_empty());
+    assert!(state.transcript.plan().is_none());
+}
+
+#[test]
+fn voice_toggle_while_live_requests_the_stop() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_dictation(&mut state);
+    let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel::<()>();
+    state.voice_input.stop = Some(stop_tx);
+
+    let _ = update(&mut state, Message::VoiceInputToggled);
+
+    assert_eq!(
+        state.voice_input.status,
+        crate::state::VoiceInputStatus::Stopping
+    );
+    assert!(matches!(stop_rx.try_recv(), Ok(())));
+    assert!(state.voice_input.stop.is_none());
+}
+
+#[test]
+fn voice_stopped_clears_the_session_handles() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_dictation(&mut state);
+    state.voice_input.status = crate::state::VoiceInputStatus::Stopping;
+
+    let _ = update(&mut state, Message::VoiceInputStopped);
+
+    assert_eq!(
+        state.voice_input.status,
+        crate::state::VoiceInputStatus::Idle
+    );
+    assert!(state.voice_input.thread.is_none());
+    assert!(state.voice_input.stop.is_none());
+    // The transcribed text stays in the composer, editable as ever.
+    assert_eq!(state.composer, "前缀：");
+}
+
+#[test]
+fn voice_stopped_keeps_a_failure_on_screen() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_dictation(&mut state);
+    state.voice_input.status =
+        crate::state::VoiceInputStatus::Failed(String::from("语音会话出错：boom"));
+
+    let _ = update(&mut state, Message::VoiceInputStopped);
+
+    assert_eq!(
+        state.voice_input.status,
+        crate::state::VoiceInputStatus::Failed(String::from("语音会话出错：boom"))
+    );
+    assert!(state.voice_input.thread.is_none());
+}
+
+#[test]
+fn voice_session_error_fails_and_signals_the_task() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_dictation(&mut state);
+    let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel::<()>();
+    state.voice_input.stop = Some(stop_tx);
+
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "thread/realtime/error",
+            "params": {"threadId": "v-t", "message": "session exploded"}
+        }))),
+    );
+
+    assert_eq!(
+        state.voice_input.status,
+        crate::state::VoiceInputStatus::Failed(String::from("语音会话出错：session exploded"))
+    );
+    assert!(matches!(stop_rx.try_recv(), Ok(())));
+    assert!(state.voice_input.stop.is_none());
+}
+
+/// The real app-server reports a provider without a realtime channel as
+/// an asynchronous websocket handshake failure (spike-verified), not as
+/// a start refusal; it must surface the actionable unsupported hint.
+#[test]
+fn voice_handshake_failure_reports_unsupported_hint() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_dictation(&mut state);
+
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "thread/realtime/error",
+            "params": {
+                "threadId": "v-t",
+                "message": "unexpected status 404 Not Found: realtime websocket handshake failed"
+            }
+        }))),
+    );
+
+    assert_eq!(
+        state.voice_input.status,
+        crate::state::VoiceInputStatus::Failed(String::from(
+            "当前模型不支持语音输入，请切换至支持实时语音的模型（unexpected status 404 Not Found: realtime websocket handshake failed）"
+        ))
+    );
+}
+
+#[test]
+fn voice_closed_while_recording_fails_and_signals_the_task() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_dictation(&mut state);
+    let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel::<()>();
+    state.voice_input.stop = Some(stop_tx);
+
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "thread/realtime/closed",
+            "params": {"threadId": "v-t", "reason": "transport closed"}
+        }))),
+    );
+
+    assert_eq!(
+        state.voice_input.status,
+        crate::state::VoiceInputStatus::Failed(String::from("语音会话已断开：transport closed"))
+    );
+    assert!(matches!(stop_rx.try_recv(), Ok(())));
+}
+
+#[test]
+fn voice_closed_during_teardown_is_ignored() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_dictation(&mut state);
+    // The user's own stop produced this close; it must not clobber the
+    // teardown with a failure.
+    state.voice_input.status = crate::state::VoiceInputStatus::Stopping;
+
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "thread/realtime/closed",
+            "params": {"threadId": "v-t", "reason": "requested"}
+        }))),
+    );
+
+    assert_eq!(
+        state.voice_input.status,
+        crate::state::VoiceInputStatus::Stopping
+    );
+}
+
+#[test]
+fn main_thread_traffic_still_flows_while_dictating() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_dictation(&mut state);
+
+    let _ = update(
+        &mut state,
+        Message::Event(notification(json!({
+            "method": "turn/plan/updated",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "explanation": null,
+                "plan": [{"step": "reproduce", "status": "inProgress"}]
+            }
+        }))),
+    );
+
+    assert!(state.transcript.plan().is_some());
+}
+
+#[test]
 fn turn_completed_reopens_the_composer_on_the_live_thread() {
     let mut state = State::new(Flags::default_app_server());
     state.thread_id = Some(String::from("t1"));
@@ -1688,6 +2267,118 @@ fn quest_scenario_cancel_leaves_the_thread_alone() {
     assert!(!state.quest.picker_open);
     assert_eq!(state.thread_id.as_deref(), Some("thread-1"));
     assert_eq!(state.quest.scenario, None);
+}
+
+#[test]
+fn left_rail_toggle_flips_the_sidebar_visibility() {
+    let mut state = State::new(Flags::default_app_server());
+    assert!(state.left_rail_open, "the sidebar starts visible");
+
+    let _ = update(&mut state, Message::LeftRailToggled);
+    assert!(!state.left_rail_open);
+
+    let _ = update(&mut state, Message::LeftRailToggled);
+    assert!(state.left_rail_open, "the toggle flips back");
+}
+
+#[test]
+fn quest_artifact_panel_toggles_and_switches_tabs() {
+    let mut state = State::new(Flags::default_app_server());
+    assert!(state.artifacts.open, "the panel starts visible");
+    assert_eq!(
+        state.artifacts.tab,
+        ArtifactTab::Spec,
+        "Spec is the default"
+    );
+
+    let _ = update(&mut state, Message::QuestArtifactsToggled);
+    assert!(!state.artifacts.open);
+
+    let _ = update(
+        &mut state,
+        Message::QuestArtifactTabSelected(ArtifactTab::Changes),
+    );
+    assert_eq!(state.artifacts.tab, ArtifactTab::Changes);
+}
+
+#[test]
+fn quest_artifact_row_opens_the_diff_overlay_on_that_file() {
+    let mut state = State::new(Flags::default_app_server());
+
+    let _ = update(&mut state, Message::QuestArtifactFileOpened(3));
+
+    assert_eq!(state.diff_selected, Some(3));
+    assert!(state.diff_overlay_open, "the row hands off to the overlay");
+}
+
+#[test]
+fn next_thread_walks_forward_with_wrap_around() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_sessions(
+        &mut state,
+        vec![
+            thread_json("a", "first", "/repo"),
+            thread_json("b", "second", "/repo"),
+            thread_json("c", "third", "/repo"),
+        ],
+    );
+    let threads = state.sessions.threads();
+
+    assert_eq!(
+        next_thread(threads, Some("a")).map(|thread| thread.id.as_str()),
+        Some("b")
+    );
+    assert_eq!(
+        next_thread(threads, Some("c")).map(|thread| thread.id.as_str()),
+        Some("a"),
+        "the walk wraps at the end"
+    );
+    assert_eq!(
+        next_thread(threads, None).map(|thread| thread.id.as_str()),
+        Some("a"),
+        "no active thread starts from the top"
+    );
+
+    let empty: &[codex_gui_core::ThreadSummary] = &[];
+    assert!(next_thread(empty, Some("a")).is_none());
+}
+
+#[test]
+fn next_session_requested_dismisses_transient_quest_state() {
+    let mut state = State::new(Flags::default_app_server());
+    seed_sessions(
+        &mut state,
+        vec![
+            thread_json("a", "first", "/repo"),
+            thread_json("b", "second", "/repo"),
+        ],
+    );
+    state.thread_id = Some(String::from("a"));
+    state.quest.picker_open = true;
+    state.quest.scenario = Some(QuestScenario::Spec);
+
+    let _ = update(&mut state, Message::NextSessionRequested);
+
+    assert!(!state.quest.picker_open, "the walk dismisses overlays");
+    assert_eq!(
+        state.quest.scenario, None,
+        "the chip belongs to the quest left behind"
+    );
+}
+
+#[test]
+fn next_session_requested_without_threads_keeps_everything() {
+    let mut state = State::new(Flags::default_app_server());
+    state.quest.picker_open = true;
+    state.quest.scenario = Some(QuestScenario::Tool);
+
+    let _ = update(&mut state, Message::NextSessionRequested);
+
+    assert!(
+        state.quest.picker_open,
+        "nothing to switch to: the overlays stay"
+    );
+    assert_eq!(state.quest.scenario, Some(QuestScenario::Tool));
 }
 
 #[test]

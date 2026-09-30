@@ -10,6 +10,8 @@ use crate::icons::Icon;
 use crate::icons::IconKind;
 use crate::message::Message;
 use crate::message::Reaction;
+use crate::selectable::SelectableText;
+use crate::state::EditDraft;
 use crate::state::State;
 use crate::theme;
 use codex_app_server_protocol::ThreadTokenUsage;
@@ -19,14 +21,17 @@ use codex_gui_core::TurnPlan;
 use iced::Element;
 use iced::Fill;
 use iced::Font;
+use iced::Length;
 use iced::alignment;
 use iced::widget::button;
 use iced::widget::column;
 use iced::widget::container;
 use iced::widget::image;
+use iced::widget::mouse_area;
 use iced::widget::row;
 use iced::widget::scrollable;
 use iced::widget::text;
+use iced::widget::text_editor;
 use iced::widget::text_input;
 
 /// Scrollable id targeted by `operation::snap_to_end`.
@@ -34,6 +39,9 @@ pub const TRANSCRIPT_ID: &str = "transcript";
 
 /// Text-input id of the transcript search bar, focused when it opens.
 pub const SEARCH_INPUT_ID: &str = "chat-search-input";
+
+/// Text-editor id of the inline message editor, focused when it opens.
+pub const EDIT_INPUT_ID: &str = "chat-edit-input";
 
 /// Reading-width cap for the conversation column, mirroring the centered
 /// column of the reference layout.
@@ -594,7 +602,10 @@ fn file_change_card(changes: &[FileChangeRecord]) -> Element<'static, Message> {
     .into()
 }
 
-/// One user turn: right-aligned gray card with a faint timestamp below.
+/// One user turn: right-aligned gray card with a faint timestamp below;
+/// hovering the row reveals copy/edit actions next to the timestamp.
+/// While the message is being edited, the bubble turns into the inline
+/// editor.
 fn user_message<'a>(
     state: &'a State,
     id: &str,
@@ -602,13 +613,51 @@ fn user_message<'a>(
     images: &[std::path::PathBuf],
     now: i64,
 ) -> Element<'a, Message> {
-    let mut card = column![
-        text(String::from(body))
-            .size(theme::SIZE_BODY)
-            .style(theme::fg)
-    ]
-    .spacing(8)
-    .padding([10, 14]);
+    if let Some(draft) = state.editing.as_ref()
+        && draft.message_id == id
+    {
+        return edit_bubble(draft);
+    }
+
+    // The message body is selectable text as well: one block per logical
+    // line keeps hit-test offsets line-relative, and an empty line keeps
+    // its height with a stand-in space.
+    let namespace = format!("user:{id}");
+    let epoch = state
+        .text_selection
+        .as_ref()
+        .map_or(0, |selection| selection.epoch);
+    let selecting = state
+        .text_selection
+        .as_ref()
+        .and_then(|selection| selection.message())
+        == Some(namespace.as_str());
+    let mut body_lines = column![].spacing(0);
+    for (index, line) in body.split('\n').enumerate() {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+
+        if line.is_empty() {
+            body_lines = body_lines.push(text(" ").size(theme::SIZE_BODY).style(theme::fg));
+            continue;
+        }
+
+        let key = format!("user:{id}:{index}");
+        let selection = state
+            .text_selection
+            .as_ref()
+            .and_then(|selection| selection.range_for(&key, line.len()));
+        body_lines = body_lines.push(
+            SelectableText::plain(key, line)
+                .size(theme::SIZE_BODY)
+                .color(theme::TEXT)
+                .selection(selection)
+                .epoch(epoch)
+                .selection_active(selecting)
+                .on_select(Message::from),
+        );
+    }
+
+    let mut card = column![body_lines].spacing(8).padding([10, 14]);
 
     if !images.is_empty() {
         let mut thumbnails = row![].spacing(6);
@@ -628,86 +677,173 @@ fn user_message<'a>(
         .map_or_else(String::new, |sent| relative_time(*sent, now));
     let stamp = text(stamp).size(theme::SIZE_XS).style(faint);
 
-    container(
-        column![
-            row![iced::widget::Space::new().width(Fill), bubble],
-            row![iced::widget::Space::new().width(Fill), stamp],
-        ]
-        .spacing(2),
+    let mut footer = row![iced::widget::Space::new().width(Fill)]
+        .spacing(2)
+        .align_y(alignment::Vertical::Center);
+    if state.hovered_message.as_deref() == Some(id) {
+        let key = message_copy_key(id);
+        let copied = state.copied_key.as_deref() == Some(key.as_str());
+        let copy_icon = if copied {
+            IconKind::Check
+        } else {
+            IconKind::Copy
+        };
+        let copy_kind = if copied { theme::BRAND } else { theme::MUTED };
+        footer = footer
+            .push(icon_action(
+                copy_icon,
+                copy_kind,
+                Message::CopyMessage {
+                    key,
+                    text: String::from(body),
+                },
+            ))
+            .push(icon_action(
+                IconKind::Edit,
+                theme::MUTED,
+                Message::EditStarted(String::from(id)),
+            ));
+    }
+    footer = footer.push(stamp);
+
+    mouse_area(
+        container(
+            column![row![iced::widget::Space::new().width(Fill), bubble], footer,].spacing(2),
+        )
+        .width(Fill),
     )
-    .width(Fill)
+    .on_enter(Message::MessageHovered(Some(String::from(id))))
+    .on_exit(Message::MessageHovered(None))
     .into()
 }
 
-/// One agent message: markdown body; the turn-closing message also
-/// renders the copy/react action bar (one end-of-task marker per turn).
+/// The inline editor replacing one user bubble while its message is
+/// being rewritten; Enter resubmits, Esc cancels.
+fn edit_bubble<'a>(draft: &'a EditDraft) -> Element<'a, Message> {
+    let editor = text_editor(&draft.content)
+        .id(EDIT_INPUT_ID)
+        .placeholder("编辑消息…")
+        .on_action(Message::EditTextEdited)
+        .key_binding(edit_key_binding)
+        .height(Length::Fixed(120.0));
+
+    let hint = text("发送后将从此消息重新开始，之后的对话会被移除")
+        .size(theme::SIZE_XS)
+        .style(faint);
+
+    let actions = row![
+        iced::widget::Space::new().width(Fill),
+        button(text("取消").size(theme::SIZE_SM).style(theme::fg))
+            .padding([4, 10])
+            .style(theme::ghost_button)
+            .on_press(Message::EditCancelled),
+        button(text("重新发送").size(theme::SIZE_SM))
+            .padding([4, 12])
+            .style(theme::primary_button)
+            .on_press(Message::EditSubmitted),
+    ]
+    .spacing(8)
+    .align_y(alignment::Vertical::Center);
+
+    let card = container(column![editor, hint, actions].spacing(8).padding([10, 14]))
+        .max_width(USER_BUBBLE_WIDTH)
+        .style(user_bubble);
+
+    container(row![iced::widget::Space::new().width(Fill), card])
+        .width(Fill)
+        .into()
+}
+
+/// Enter resubmits the edit and Esc cancels it; Shift+Enter keeps the
+/// stock newline, as does every other text-editor binding.
+fn edit_key_binding(key: text_editor::KeyPress) -> Option<text_editor::Binding<Message>> {
+    if key.key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) {
+        return Some(text_editor::Binding::Custom(Message::EditCancelled));
+    }
+    if key.key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Enter)
+        && !key.modifiers.shift()
+    {
+        return Some(text_editor::Binding::Custom(Message::EditSubmitted));
+    }
+    text_editor::Binding::from_key_press(key)
+}
+
+/// One agent message: markdown body plus its copy/react action bar; the
+/// turn-closing message also carries the AI attribution.
 fn agent_message<'a>(
     state: &'a State,
-    id: &str,
+    id: &'a str,
     text_body: &str,
     closes_turn: bool,
 ) -> Element<'a, Message> {
     // Deltas reach the parsed cache on the render tick, so a message may
     // briefly exist only in the transcript.
     let body: Element<'_, Message> = match state.markdowns.get(id) {
-        Some(content) => markdown_view::render(content),
+        Some(content) => markdown_view::render(
+            content,
+            id,
+            state.copied_key.as_deref(),
+            state.text_selection.as_ref(),
+        ),
         None => text(String::new()).into(),
     };
 
-    let mut card = column![body].spacing(6);
-    if closes_turn {
-        let copy_kind = if state.copied_id.as_deref() == Some(id) {
-            theme::BRAND
-        } else {
-            theme::MUTED
-        };
-        let up_kind = if state.reactions.get(id) == Some(&Reaction::Up) {
-            theme::BRAND
-        } else {
-            theme::MUTED
-        };
-        let down_kind = if state.reactions.get(id) == Some(&Reaction::Down) {
-            theme::DANGER
-        } else {
-            theme::MUTED
-        };
+    let key = message_copy_key(id);
+    let copied = state.copied_key.as_deref() == Some(key.as_str());
+    let copy_icon = if copied {
+        IconKind::Check
+    } else {
+        IconKind::Copy
+    };
+    let copy_kind = if copied { theme::BRAND } else { theme::MUTED };
+    let up_kind = if state.reactions.get(id) == Some(&Reaction::Up) {
+        theme::BRAND
+    } else {
+        theme::MUTED
+    };
+    let down_kind = if state.reactions.get(id) == Some(&Reaction::Down) {
+        theme::DANGER
+    } else {
+        theme::MUTED
+    };
 
-        let payload = String::from(text_body);
-        card = card.push(
-            row![
-                icon_action(
-                    IconKind::Copy,
-                    copy_kind,
-                    Message::CopyMessage {
-                        id: String::from(id),
-                        text: payload,
-                    },
-                ),
-                icon_action(
-                    IconKind::ThumbUp,
-                    up_kind,
-                    Message::ReactionToggled {
-                        id: String::from(id),
-                        reaction: Reaction::Up,
-                    },
-                ),
-                icon_action(
-                    IconKind::ThumbDown,
-                    down_kind,
-                    Message::ReactionToggled {
-                        id: String::from(id),
-                        reaction: Reaction::Down,
-                    },
-                ),
-                iced::widget::Space::new().width(Fill),
-                text("AI-generated").size(theme::SIZE_XS).style(faint),
-            ]
-            .spacing(6)
-            .align_y(alignment::Vertical::Center),
-        );
+    let mut actions = row![
+        icon_action(
+            copy_icon,
+            copy_kind,
+            Message::CopyMessage {
+                key,
+                text: String::from(text_body),
+            },
+        ),
+        icon_action(
+            IconKind::ThumbUp,
+            up_kind,
+            Message::ReactionToggled {
+                id: String::from(id),
+                reaction: Reaction::Up,
+            },
+        ),
+        icon_action(
+            IconKind::ThumbDown,
+            down_kind,
+            Message::ReactionToggled {
+                id: String::from(id),
+                reaction: Reaction::Down,
+            },
+        ),
+        iced::widget::Space::new().width(Fill),
+    ]
+    .spacing(6)
+    .align_y(alignment::Vertical::Center);
+    if closes_turn {
+        actions = actions.push(text("AI-generated").size(theme::SIZE_XS).style(faint));
     }
 
-    container(card.padding([6, 4])).width(Fill).into()
+    container(column![body, actions].spacing(6))
+        .width(Fill)
+        .padding([6, 4])
+        .into()
 }
 
 /// One command tool card: a clickable header row (`$ command` plus a
@@ -748,11 +884,20 @@ fn command_card<'a>(
     .align_y(alignment::Vertical::Center);
 
     let mut card = column![
-        button(header)
-            .padding([2, 4])
-            .style(theme::ghost_button)
-            .on_press(Message::CommandCardToggled(String::from(id)))
-            .width(Fill)
+        row![
+            button(header)
+                .padding([2, 4])
+                .style(theme::ghost_button)
+                .on_press(Message::CommandCardToggled(String::from(id)))
+                .width(Fill),
+            card_copy_action(
+                state,
+                id,
+                format!("$ {command}\n{output}").trim_end().to_string()
+            ),
+        ]
+        .spacing(4)
+        .align_y(alignment::Vertical::Center)
     ]
     .spacing(4);
 
@@ -803,11 +948,16 @@ fn reasoning_card<'a>(state: &'a State, id: &str, body: &str) -> Element<'a, Mes
     };
 
     let mut card = column![
-        button(text(header_label).size(theme::SIZE_SM).style(theme::dim))
-            .padding([2, 4])
-            .style(theme::ghost_button)
-            .on_press(Message::ReasoningToggled(String::from(id)))
-            .width(Fill)
+        row![
+            button(text(header_label).size(theme::SIZE_SM).style(theme::dim))
+                .padding([2, 4])
+                .style(theme::ghost_button)
+                .on_press(Message::ReasoningToggled(String::from(id)))
+                .width(Fill),
+            card_copy_action(state, id, String::from(body)),
+        ]
+        .spacing(4)
+        .align_y(alignment::Vertical::Center)
     ]
     .spacing(4);
 
@@ -879,12 +1029,25 @@ fn mcp_card<'a>(state: &'a State, card: McpCallCard<'_>) -> Element<'a, Message>
     .spacing(8)
     .align_y(alignment::Vertical::Center);
 
+    let mut payload = format!("{tool} · {server}\n{arguments}");
+    if let Some(error) = error {
+        payload.push_str("\n\n");
+        payload.push_str(error);
+    } else if let Some(result) = result {
+        payload.push_str("\n\n");
+        payload.push_str(result);
+    }
     let mut card = column![
-        button(header)
-            .padding([2, 4])
-            .style(theme::ghost_button)
-            .on_press(Message::McpCardToggled(String::from(id)))
-            .width(Fill)
+        row![
+            button(header)
+                .padding([2, 4])
+                .style(theme::ghost_button)
+                .on_press(Message::McpCardToggled(String::from(id)))
+                .width(Fill),
+            card_copy_action(state, id, payload),
+        ]
+        .spacing(4)
+        .align_y(alignment::Vertical::Center)
     ]
     .spacing(4);
 
@@ -962,6 +1125,26 @@ fn format_duration(ms: i64) -> String {
     } else {
         format!("{:.1}s", ms as f64 / 1000.0)
     }
+}
+
+/// Feedback key for one message-body copy button, shared by the user
+/// hover actions, the agent action bar, and the Edit menu's copy row.
+pub(crate) fn message_copy_key(id: &str) -> String {
+    format!("msg:{id}")
+}
+
+/// The copy button in one tool card's header: copies the card's payload
+/// and badges through the same feedback key as the message actions.
+fn card_copy_action<'a>(state: &State, scope: &str, payload: String) -> Element<'a, Message> {
+    let key = format!("card:{scope}");
+    let copied = state.copied_key.as_deref() == Some(key.as_str());
+    let icon = if copied {
+        IconKind::Check
+    } else {
+        IconKind::Copy
+    };
+    let color = if copied { theme::BRAND } else { theme::MUTED };
+    icon_action(icon, color, Message::CopyMessage { key, text: payload })
 }
 
 /// A borderless canvas-icon button for the action bar.

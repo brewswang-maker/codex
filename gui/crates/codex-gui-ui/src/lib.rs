@@ -17,6 +17,7 @@ mod menu_bar;
 mod message;
 mod model_menu;
 mod plan_view;
+mod quest_artifacts;
 mod quest_board;
 mod quest_launch;
 mod quest_overlays;
@@ -25,6 +26,7 @@ mod quest_view;
 mod remote_view;
 mod requests_view;
 mod scm_view;
+mod selectable;
 mod sessions_view;
 mod settings_view;
 mod skills_view;
@@ -51,6 +53,8 @@ use iced::futures::SinkExt;
 use iced::futures::Stream;
 use iced::futures::channel::mpsc::Sender;
 use iced::window;
+
+use crate::message::AppMode;
 
 /// How often buffered streaming deltas are flushed into the rendered
 /// markdown; spec section 7 fixes the throttle at 50 ms.
@@ -117,6 +121,63 @@ pub fn subscription(state: &State) -> Subscription<Message> {
             is_q.then_some(Message::ModeToggled)
         }
         _ => None,
+    });
+
+    // Ctrl+, opens the settings panel from anywhere outside the palette.
+    let settings_keys = (!state.palette.open).then(|| {
+        iced::event::listen_with(|event, _status, _window| match event {
+            Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. })
+                if modifiers.control() && !modifiers.shift() && !modifiers.alt() =>
+            {
+                let is_comma = matches!(&key, iced::keyboard::Key::Character(c)
+                    if c.as_str() == ",");
+                is_comma.then_some(Message::SettingsToggled)
+            }
+            _ => None,
+        })
+    });
+
+    // Ctrl+B hides or shows the left rail; Ctrl+Shift+B toggles the Quest
+    // artifact panel, which only exists in the Quest shell (the listener
+    // stays out of the batch elsewhere).
+    let rail_keys = (!state.palette.open).then(|| {
+        iced::event::listen_with(|event, _status, _window| match event {
+            Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. })
+                if modifiers.control() && !modifiers.shift() && !modifiers.alt() =>
+            {
+                let is_b = matches!(&key, iced::keyboard::Key::Character(c)
+                    if c.eq_ignore_ascii_case("b"));
+                is_b.then_some(Message::LeftRailToggled)
+            }
+            _ => None,
+        })
+    });
+    let artifact_keys = (state.mode == AppMode::Quest && !state.palette.open).then(|| {
+        iced::event::listen_with(|event, _status, _window| match event {
+            Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. })
+                if modifiers.control() && modifiers.shift() && !modifiers.alt() =>
+            {
+                let is_b = matches!(&key, iced::keyboard::Key::Character(c)
+                    if c.eq_ignore_ascii_case("b"));
+                is_b.then_some(Message::QuestArtifactsToggled)
+            }
+            _ => None,
+        })
+    });
+
+    // Ctrl+G advances to the next task, matching the reference IDE's
+    // switch-task shortcut.
+    let next_session_keys = (!state.palette.open).then(|| {
+        iced::event::listen_with(|event, _status, _window| match event {
+            Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. })
+                if modifiers.control() && !modifiers.shift() && !modifiers.alt() =>
+            {
+                let is_g = matches!(&key, iced::keyboard::Key::Character(c)
+                    if c.eq_ignore_ascii_case("g"));
+                is_g.then_some(Message::NextSessionRequested)
+            }
+            _ => None,
+        })
     });
 
     // While a Quest dialog owns the keyboard, Esc dismisses it and Enter
@@ -247,15 +308,77 @@ pub fn subscription(state: &State) -> Subscription<Message> {
         })
     });
 
+    // Partial transcript selections: Ctrl+C copies the highlighted text,
+    // Esc or a plain click drops it. Widgets that consume those keys
+    // themselves (the composer, the editors) capture the event first, so
+    // this subscription only fires while nothing else owns it.
+    let selection_keys = state.text_selection.is_some().then(|| {
+        iced::event::listen_with(|event, _status, _window| match event {
+            Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. })
+                if modifiers.control() && !modifiers.shift() && !modifiers.alt() =>
+            {
+                let is_c = matches!(&key, iced::keyboard::Key::Character(c)
+                    if c.eq_ignore_ascii_case("c"));
+                is_c.then(|| {
+                    tracing::debug!("subscription: ctrl+c copy requested");
+                    Message::TextSelectionCopyRequested
+                })
+            }
+            Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. })
+                if !modifiers.control() && !modifiers.alt() =>
+            {
+                matches!(
+                    key,
+                    iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape)
+                )
+                .then(|| {
+                    tracing::debug!("subscription: escape cleared selection");
+                    Message::TextSelectionCleared
+                })
+            }
+            Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) => {
+                tracing::debug!("subscription: click cleared selection");
+                Some(Message::TextSelectionCleared)
+            }
+            _ => None,
+        })
+    });
+
     // Software-renderer pacing logs: first-frame latency, average frame
     // rate, and wheel-event timestamps feed the M4 performance notes.
     let perf_events = iced::event::listen_with(|event, _status, _window| perf::observe(&event));
+
+    // Ctrl+Shift+V toggles composer dictation from anywhere, matching
+    // Qoder's "开始或停止语音输入" shortcut.
+    let voice_input_keys = (!state.palette.open).then(|| {
+        iced::event::listen_with(|event, _status, _window| match event {
+            Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. })
+                if modifiers.control() && modifiers.shift() && !modifiers.alt() =>
+            {
+                let is_v = matches!(&key, iced::keyboard::Key::Character(c)
+                    if c.eq_ignore_ascii_case("v"));
+                is_v.then_some(Message::VoiceInputToggled)
+            }
+            _ => None,
+        })
+    });
+
+    // The recording indicator's heartbeat only ticks while the mic is
+    // live; the subscription drops the moment dictation stops.
+    let voice_pulse = state.voice_input.recording().then(|| {
+        iced::time::every(std::time::Duration::from_millis(600))
+            .map(|_instant| Message::VoiceInputPulse)
+    });
 
     Subscription::batch([
         connection,
         drops,
         tick.unwrap_or_else(Subscription::none),
         new_quest_keys,
+        settings_keys.unwrap_or_else(Subscription::none),
+        rail_keys.unwrap_or_else(Subscription::none),
+        artifact_keys.unwrap_or_else(Subscription::none),
+        next_session_keys.unwrap_or_else(Subscription::none),
         mode_toggle_keys,
         quest_overlay_keys.unwrap_or_else(Subscription::none),
         palette_toggle,
@@ -266,6 +389,9 @@ pub fn subscription(state: &State) -> Subscription<Message> {
         model_menu_keys.unwrap_or_else(Subscription::none),
         skills_page_keys.unwrap_or_else(Subscription::none),
         mention_keys.unwrap_or_else(Subscription::none),
+        selection_keys.unwrap_or_else(Subscription::none),
+        voice_input_keys.unwrap_or_else(Subscription::none),
+        voice_pulse.unwrap_or_else(Subscription::none),
         perf_events,
     ])
 }

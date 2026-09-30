@@ -121,11 +121,25 @@ fn session_history_projection_carries_id_and_turns() {
     }))
     .expect("resume response decodes");
 
-    let history = SessionHistory::from_resume(&resume);
+    // The caller passes the assembled turns: paginated resumes bootstrap
+    // through `initialTurnsPage` pages rather than `thread.turns`.
+    let turns: Vec<codex_app_server_protocol::Turn> = serde_json::from_value(json!([{
+        "id": "turn-9",
+        "items": [],
+        "status": "completed",
+        "error": null,
+        "startedAt": null,
+        "completedAt": null,
+        "durationMs": null
+    }]))
+    .expect("turns decode");
+
+    let history = SessionHistory::from_resume(&resume, turns);
     assert_eq!(history.thread_id, "thread-9");
     assert_eq!(history.model_provider, "mock");
     assert_eq!(history.model, "mock-model");
-    assert_eq!(history.turns.len(), 0);
+    assert_eq!(history.turns.len(), 1);
+    assert_eq!(history.turns[0].id, "turn-9");
 }
 
 #[test]

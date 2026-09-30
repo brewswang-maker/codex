@@ -318,6 +318,53 @@ fn replay_replaces_content_with_persisted_snapshots() {
 }
 
 #[test]
+fn notification_records_item_turn_mapping() {
+    let mut transcript = Transcript::default();
+
+    transcript.apply(&user_started("u1", "fix the bug"));
+    transcript.apply(&agent_started("m1"));
+
+    assert_eq!(transcript.turn_of("u1"), Some("turn-1"));
+    assert_eq!(transcript.turn_of("m1"), Some("turn-1"));
+    assert_eq!(transcript.turn_of("missing"), None);
+}
+
+#[test]
+fn replay_rebuilds_item_turn_mapping() {
+    use codex_app_server_protocol::Turn;
+
+    let mut transcript = Transcript::default();
+    transcript.apply(&user_started("live-u", "live question"));
+
+    let turns: Vec<Turn> = from_value(json!([
+        {
+            "id": "turn-h1",
+            "items": [
+                {
+                    "type": "userMessage",
+                    "id": "hist-u",
+                    "content": [{"type": "text", "text": "old question", "textElements": []}]
+                },
+                {"type": "agentMessage", "id": "hist-a", "text": "old answer"}
+            ],
+            "status": "completed",
+            "error": null,
+            "startedAt": null,
+            "completedAt": null,
+            "durationMs": null
+        }
+    ]))
+    .expect("turns decode");
+
+    transcript.replay(&turns);
+
+    assert_eq!(transcript.turn_of("hist-u"), Some("turn-h1"));
+    assert_eq!(transcript.turn_of("hist-a"), Some("turn-h1"));
+    // The pre-replay mapping is stale history and must be dropped.
+    assert_eq!(transcript.turn_of("live-u"), None);
+}
+
+#[test]
 fn replay_finalizes_command_snapshots() {
     use codex_app_server_protocol::Turn;
 

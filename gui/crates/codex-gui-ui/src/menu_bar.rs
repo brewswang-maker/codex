@@ -233,9 +233,25 @@ fn entries(id: MenuId, state: &State) -> Vec<MenuEntry> {
                 AppMode::Editor => "切换到 Quest 模式",
                 AppMode::Quest => "返回编辑器",
             };
+            // The artifact panel only exists in the Quest shell; its row
+            // greys out with the editor chrome.
+            let artifacts = match state.mode {
+                AppMode::Quest => action(
+                    "切换产物面板",
+                    Some("Ctrl+Shift+B"),
+                    Message::QuestArtifactsToggled,
+                ),
+                AppMode::Editor => MenuEntry::Disabled {
+                    label: "切换产物面板",
+                    shortcut: Some("Ctrl+Shift+B"),
+                },
+            };
             vec![
                 action("搜索面板", Some("Ctrl+F"), Message::ChatSearchOpened),
                 action("命令面板", Some("Ctrl+Shift+P"), Message::PaletteToggled),
+                MenuEntry::Separator,
+                action("切换左侧栏", Some("Ctrl+B"), Message::LeftRailToggled),
+                artifacts,
                 MenuEntry::Separator,
                 action(
                     "文件资源管理器",
@@ -318,7 +334,10 @@ fn copy_last_reply(state: &State, label: &'static str) -> MenuEntry {
         Some((id, text)) => MenuEntry::Action {
             label: String::from(label),
             shortcut: None,
-            action: Message::CopyMessage { id, text },
+            action: Message::CopyMessage {
+                key: crate::chat::message_copy_key(&id),
+                text,
+            },
         },
         None => MenuEntry::Disabled {
             label,

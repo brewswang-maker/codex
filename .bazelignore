@@ -2,6 +2,7 @@
 # .git/sl/origbackups (which can be populated by Sapling SCM).
 .git
 codex-rs/target
-# Vendored iced checkout + standalone GUI client workspace
+# Vendored iced checkout + standalone GUI client workspaces
 iced
 gui
+manju

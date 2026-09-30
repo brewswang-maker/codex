@@ -16,6 +16,7 @@ use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnPlanStepStatus;
 use codex_app_server_protocol::TurnPlanUpdatedNotification;
 use codex_app_server_protocol::UserInput;
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// One rendered row of the conversation.
@@ -127,14 +128,24 @@ pub struct PlanStep {
 pub struct Transcript {
     entries: Vec<Entry>,
     plan: Option<TurnPlan>,
+    /// Item id -> turn id. Both the live notification stream and resume
+    /// replay record it; the edit-and-resubmit flow looks up which turn a
+    /// user message belongs to before forking the thread.
+    item_turns: HashMap<String, String>,
 }
 
 impl Transcript {
     /// Applies one server notification to the transcript.
     pub fn apply(&mut self, notification: &ServerNotification) {
         match notification {
-            ServerNotification::ItemStarted(started) => self.apply_started(&started.item),
-            ServerNotification::ItemCompleted(completed) => self.apply_completed(&completed.item),
+            ServerNotification::ItemStarted(started) => {
+                self.record_item_turn(started.item.id(), &started.turn_id);
+                self.apply_started(&started.item);
+            }
+            ServerNotification::ItemCompleted(completed) => {
+                self.record_item_turn(completed.item.id(), &completed.turn_id);
+                self.apply_completed(&completed.item);
+            }
             ServerNotification::AgentMessageDelta(delta) => {
                 self.append_agent_delta(&delta.item_id, &delta.delta);
             }
@@ -174,6 +185,12 @@ impl Transcript {
     /// Read-only view for the renderer.
     pub fn entries(&self) -> &[Entry] {
         &self.entries
+    }
+
+    /// The id of the turn an item belongs to, when known. The
+    /// edit-and-resubmit flow uses it as the fork point.
+    pub fn turn_of(&self, item_id: &str) -> Option<&str> {
+        self.item_turns.get(item_id).map(String::as_str)
     }
 
     /// The live turn plan, if one is running.
@@ -224,12 +241,19 @@ impl Transcript {
     pub fn replay(&mut self, turns: &[Turn]) {
         self.entries.clear();
         self.plan = None;
+        self.item_turns.clear();
         for turn in turns {
             for item in &turn.items {
+                self.record_item_turn(item.id(), &turn.id);
                 self.apply_started(item);
                 self.apply_completed(item);
             }
         }
+    }
+
+    fn record_item_turn(&mut self, item_id: &str, turn_id: &str) {
+        self.item_turns
+            .insert(item_id.to_string(), turn_id.to_string());
     }
 
     fn apply_plan(&mut self, notification: &TurnPlanUpdatedNotification) {

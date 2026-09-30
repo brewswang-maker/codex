@@ -15,6 +15,7 @@ use crate::message::AppMode;
 use crate::message::Message;
 use crate::model_menu;
 use crate::plan_view;
+use crate::quest_artifacts;
 use crate::quest_board;
 use crate::quest_launch;
 use crate::quest_overlays;
@@ -71,7 +72,7 @@ pub fn view(state: &State) -> Element<'_, Message> {
             // chat panel pinned to the right edge.
             let body = row![
                 activity_bar::activity_bar(state),
-                sessions_view::sidebar(state),
+                collapsible(state.left_rail_open, sessions_view::sidebar(state)),
                 editor_view::editor_area(state),
                 container(main).width(CHAT_PANEL_WIDTH),
             ]
@@ -93,12 +94,17 @@ pub fn view(state: &State) -> Element<'_, Message> {
                 && !state.skills.picker_open;
             let body = if quest_empty {
                 row![
-                    quest_view::quest_sidebar(state),
+                    collapsible(state.left_rail_open, quest_view::quest_sidebar(state)),
                     quest_launch::page(state, composer(state)),
                 ]
                 .height(Fill)
             } else {
-                row![quest_view::quest_sidebar(state), main].height(Fill)
+                row![
+                    collapsible(state.left_rail_open, quest_view::quest_sidebar(state)),
+                    main,
+                    collapsible(state.artifacts.open, quest_artifacts::panel(state)),
+                ]
+                .height(Fill)
             };
             column![
                 quest_view::quest_header(state),
@@ -163,6 +169,17 @@ fn conversation(state: &State) -> Element<'_, Message> {
 fn slot(bar: Option<Element<'_, Message>>) -> Element<'_, Message> {
     let content = bar.unwrap_or_else(|| iced::widget::Space::new().height(0.0).into());
     container(content).width(Fill).into()
+}
+
+/// Collapses a side panel while `open` is false: the slot stays a
+/// zero-width child so iced's positional state pairing for the
+/// neighbouring panes (and the composer at their tail) never shifts.
+fn collapsible<'a>(open: bool, content: Element<'a, Message>) -> Element<'a, Message> {
+    if open {
+        content
+    } else {
+        container(iced::widget::Space::new().width(0.0).height(Fill)).into()
+    }
 }
 
 /// The full-screen disconnect state with the one-click relaunch.
@@ -511,6 +528,72 @@ fn composer(state: &State) -> Element<'_, Message> {
         .padding([4, 8])
         .style(theme::ghost_button)
         .on_press(Message::SkillsPickerToggled);
+    // The ✨ optimizer mirrors Qoder's 优化输入: one click rewrites the
+    // draft into a structured prompt; a follow-up chip rolls it back.
+    let optimizing = state.prompt_optimize.running();
+    let optimize = button(
+        row![
+            Icon::new(IconKind::Sparkle, theme::MUTED, 13.0).widget(),
+            text(if optimizing { "优化中…" } else { "优化" })
+                .size(theme::SIZE_XS)
+                .style(theme::fg),
+        ]
+        .spacing(4)
+        .align_y(alignment::Vertical::Center),
+    )
+    .padding([4, 8])
+    .style(theme::ghost_button)
+    .on_press_maybe(
+        (!optimizing && !state.composer.trim().is_empty())
+            .then_some(Message::PromptOptimizeRequested),
+    );
+    let undo_optimize = state.prompt_optimize.undo_available().then(|| {
+        button(text("撤销优化").size(theme::SIZE_XS).style(theme::fg))
+            .padding([4, 8])
+            .style(theme::ghost_button)
+            .on_press(Message::PromptOptimizeUndo)
+    });
+
+    // The dictation toggle mirrors Qoder's Ctrl+Shift+V: press to start
+    // listening, press again to stop. While live the glyph and the
+    // "正在聆听" line turn red and pulse - the recording indicator the
+    // privacy rule requires.
+    let voice = &state.voice_input;
+    let voice_live = matches!(
+        voice.status,
+        crate::state::VoiceInputStatus::Starting | crate::state::VoiceInputStatus::Recording
+    );
+    let voice_label = match voice.status {
+        crate::state::VoiceInputStatus::Starting => "连接中…",
+        crate::state::VoiceInputStatus::Recording => "停止",
+        crate::state::VoiceInputStatus::Stopping => "收尾中…",
+        _ => "语音",
+    };
+    let voice_press = match voice.status {
+        crate::state::VoiceInputStatus::Stopping => None,
+        _ if voice_live => Some(Message::VoiceInputToggled),
+        _ => (!optimizing).then_some(Message::VoiceInputToggled),
+    };
+    let mic = button(
+        row![
+            Icon::new(
+                IconKind::Microphone,
+                if voice_live {
+                    theme::DANGER
+                } else {
+                    theme::MUTED
+                },
+                13.0,
+            )
+            .widget(),
+            text(voice_label).size(theme::SIZE_XS).style(theme::fg),
+        ]
+        .spacing(4)
+        .align_y(alignment::Vertical::Center),
+    )
+    .padding([4, 8])
+    .style(theme::ghost_button)
+    .on_press_maybe(voice_press);
 
     // While a turn streams the primary action becomes a stop: it asks
     // the server to interrupt the live turn.
@@ -542,17 +625,46 @@ fn composer(state: &State) -> Element<'_, Message> {
     if !state.attachments.images.is_empty() {
         card = card.push(pending_chips(&state.attachments.images));
     }
-    card = card.push(
-        row![
-            skills,
-            attach,
-            iced::widget::Space::new().width(Fill),
-            model_menu_button(state),
-            send(can_submit),
-        ]
+    let mut footer = row![skills, attach, optimize, mic]
         .spacing(8)
-        .align_y(alignment::Vertical::Center),
-    );
+        .align_y(alignment::Vertical::Center);
+    if let Some(undo_optimize) = undo_optimize {
+        footer = footer.push(undo_optimize);
+    }
+    footer = footer.push(iced::widget::Space::new().width(Fill));
+    footer = footer.push(model_menu_button(state));
+    footer = footer.push(send(can_submit));
+    card = card.push(footer);
+
+    if let crate::state::PromptOptimizeStatus::Failed(reason) = &state.prompt_optimize.status {
+        card = card.push(
+            text(format!("提示词优化失败：{reason}"))
+                .size(theme::SIZE_XS)
+                .style(warn),
+        );
+    }
+
+    if state.voice_input.recording() {
+        // The heartbeat alternates the indicator between the danger tint
+        // and the muted label color.
+        let color = if state.voice_input.pulse {
+            theme::DANGER
+        } else {
+            theme::MUTED
+        };
+        card = card.push(
+            text("● 正在聆听，再按 Ctrl+Shift+V 停止")
+                .size(theme::SIZE_XS)
+                .color(color),
+        );
+    }
+    if let crate::state::VoiceInputStatus::Failed(reason) = &state.voice_input.status {
+        card = card.push(
+            text(format!("语音输入失败：{reason}"))
+                .size(theme::SIZE_XS)
+                .style(warn),
+        );
+    }
 
     container(card.spacing(6).padding(10))
         .width(Fill)

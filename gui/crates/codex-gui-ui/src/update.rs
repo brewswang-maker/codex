@@ -6,17 +6,23 @@
 
 use crate::chat;
 use crate::commands;
+use crate::commands::VOICE_UNSUPPORTED_HINT;
 use crate::message::AppMode;
 use crate::message::Bootstrap;
 use crate::message::Message;
 use crate::message::SidebarTab;
 use crate::plan_view::plan_text;
+use crate::state::EditDraft;
 use crate::state::GitOverlayStatus;
+use crate::state::PendingEdit;
 use crate::state::PendingModelApply;
+use crate::state::PromptOptimizeStatus;
 use crate::state::QuestMenu;
 use crate::state::QuestRename;
 use crate::state::State;
 use crate::state::Status;
+use crate::state::TextSelection;
+use crate::state::VoiceInputStatus;
 use crate::status_notifications;
 use codex_app_server_protocol::McpServerElicitationAction;
 use codex_app_server_protocol::McpServerElicitationRequest;
@@ -26,11 +32,13 @@ use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnStatus;
 use codex_gui_bridge::GuiEvent;
 use codex_gui_core::Billing;
+use codex_gui_core::Entry;
 use codex_gui_core::MarkdownStream;
 use codex_gui_core::QuestStatus;
 use codex_gui_core::SkillNotice;
 use codex_gui_core::SkillSource;
 use codex_gui_core::SkillsTab;
+use codex_gui_core::ThreadSummary;
 use codex_gui_core::elicitation_default_drafts;
 use codex_gui_core::elicitation_form_content;
 use codex_gui_core::elicitation_response_payload;
@@ -38,10 +46,13 @@ use codex_gui_core::question_response_payload;
 use iced::Task;
 use iced::widget::markdown;
 use iced::widget::operation;
+use iced::widget::text_editor;
 use iced_swdir_tree::DirectoryTree;
 use iced_swdir_tree::DirectoryTreeEvent;
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 #[cfg(test)]
 #[path = "update_tests.rs"]
@@ -60,12 +71,24 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
         Message::Bootstrap(step) => on_bootstrap(state, step),
         Message::ComposerChanged(text) => {
             state.composer = text;
+            // Typing over an optimized rewrite retires the undo entry:
+            // the composer no longer shows only the rewrite.
+            state.prompt_optimize.original = None;
+            // An edit during dictation becomes part of the anchored
+            // prefix: later deltas append after it instead of clobbering
+            // it.
+            if state.voice_input.active() {
+                state.voice_input.reanchor(&state.composer);
+            }
             match state.mentions.refresh(&state.composer) {
                 Some(query) => commands::search_files(state, query),
                 None => Task::none(),
             }
         }
-        Message::Submit => Task::batch([submit_composer(state), refocus_composer()]),
+        Message::Submit => {
+            state.prompt_optimize.original = None;
+            Task::batch([submit_composer(state), refocus_composer()])
+        }
         Message::TurnAcked => Task::none(),
         Message::TurnSettled {
             prompt,
@@ -186,8 +209,23 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             state.quest.scenario = None;
             commands::resume_thread(state, thread_id)
         }
+        Message::NextSessionRequested => {
+            let next = next_thread(state.sessions.threads(), state.thread_id.as_deref())
+                .map(|thread| thread.id.clone());
+            match next {
+                Some(thread_id) => {
+                    // The walk reuses the pick path: transient overlays and
+                    // the scenario chip belong to the quest being left.
+                    state.quest.close_transient();
+                    state.quest.scenario = None;
+                    commands::resume_thread(state, thread_id)
+                }
+                None => Task::none(),
+            }
+        }
         Message::SessionResumed(Ok(history)) => {
             state.quest.scenario = None;
+            let resumed_id = history.thread_id.clone();
             state.thread_id = Some(history.thread_id);
             // The resumed thread keeps its own model, which can differ from
             // the configured default; the status bar mirrors the thread.
@@ -197,7 +235,21 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             state.transcript.replay(&history.turns);
             rebuild_markdowns(state, &history.turns);
             state.status = Status::Ready;
-            Task::batch([task, commands::load_sessions(state)])
+            // An edit's fork just resumed: close the editor and resend the
+            // rewritten prompt as the thread's next turn.
+            let edit_task = match state.pending_edit.take() {
+                Some(pending)
+                    if pending.forked_thread_id.as_deref() == Some(resumed_id.as_str()) =>
+                {
+                    state.editing = None;
+                    commands::submit_text(state, pending.text, pending.images)
+                }
+                other => {
+                    state.pending_edit = other;
+                    Task::none()
+                }
+            };
+            Task::batch([task, commands::load_sessions(state), edit_task])
         }
         Message::SessionResumed(Err(error)) => {
             state.status = Status::Disconnected(error.to_string());
@@ -911,10 +963,105 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             }
             probe
         }
-        Message::CopyMessage { id, text } => {
-            state.copied_id = Some(id);
-            iced::clipboard::write(text)
+        Message::CopyMessage { key, text } => {
+            state.copied_key = Some(key.clone());
+            Task::batch([
+                iced::clipboard::write(text),
+                // The badge is a flash, not a mode: expire it on a timer
+                // and clear only if it still names the same button.
+                Task::perform(
+                    async move {
+                        tokio::time::sleep(Duration::from_millis(1600)).await;
+                        key
+                    },
+                    Message::CopyFeedbackExpired,
+                ),
+            ])
         }
+        Message::CopyFeedbackExpired(key) => {
+            if state.copied_key.as_deref() == Some(key.as_str()) {
+                state.copied_key = None;
+            }
+            Task::none()
+        }
+        Message::TextSelectionStarted(point) => {
+            tracing::debug!(key = %point.key, offset = point.offset, "app: text selection started");
+            state.selection_epoch = state.selection_epoch.wrapping_add(1);
+            state.text_selection = Some(TextSelection {
+                anchor: point.clone(),
+                focus: point,
+                epoch: state.selection_epoch,
+                lines: BTreeMap::new(),
+            });
+            Task::none()
+        }
+        Message::TextSelectionFocused(point) => {
+            if let Some(selection) = state.text_selection.as_mut()
+                && selection.accepts(&point)
+            {
+                selection.focus = point;
+            }
+            Task::none()
+        }
+        Message::TextSelectionLine { key, text } => {
+            if let Some(selection) = state.text_selection.as_mut() {
+                selection.lines.insert(key, text);
+            }
+            Task::none()
+        }
+        Message::TextSelectionCleared => {
+            tracing::debug!("app: text selection cleared");
+            state.text_selection = None;
+            Task::none()
+        }
+        Message::TextSelectionCopyRequested => {
+            let copied = state
+                .text_selection
+                .as_ref()
+                .and_then(|selection| selection.text());
+            tracing::debug!(copied = ?copied, "app: text copy requested");
+            if let Some(text) = copied {
+                return iced::clipboard::write(text);
+            }
+            Task::none()
+        }
+        Message::MessageHovered(id) => {
+            state.hovered_message = id;
+            Task::none()
+        }
+        Message::EditStarted(message_id) => open_edit(state, message_id),
+        Message::EditTextEdited(action) => {
+            if let Some(draft) = state.editing.as_mut() {
+                draft.content.perform(action);
+            }
+            Task::none()
+        }
+        Message::EditSubmitted => submit_edit(state),
+        Message::EditCancelled => {
+            state.editing = None;
+            state.pending_edit = None;
+            refocus_composer()
+        }
+        Message::EditForked(result) => match result {
+            Ok(thread_id) => match state.pending_edit.as_mut() {
+                Some(pending) => {
+                    pending.forked_thread_id = Some(thread_id.clone());
+                    commands::resume_thread(state, thread_id)
+                }
+                // The edit was cancelled while the fork was in flight;
+                // the fork stays unopened and the original conversation
+                // is untouched.
+                None => Task::none(),
+            },
+            Err(error) => {
+                // Keep the draft open so the user can retry or cancel.
+                state.pending_edit = None;
+                state
+                    .status_board
+                    .raise_banner(format!("edit could not start: {error}"));
+                Task::none()
+            }
+        },
         Message::ReactionToggled { id, reaction } => {
             // Same reaction pressed again clears it; otherwise it replaces.
             if state.reactions.get(&id) == Some(&reaction) {
@@ -992,6 +1139,25 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             state.diff_selected = Some(index);
             Task::none()
         }
+        Message::QuestArtifactFileOpened(index) => {
+            // The panel row hands off to the full diff overlay; both views
+            // share the same file-change index.
+            state.diff_selected = Some(index);
+            state.diff_overlay_open = true;
+            Task::none()
+        }
+        Message::LeftRailToggled => {
+            state.left_rail_open = !state.left_rail_open;
+            Task::none()
+        }
+        Message::QuestArtifactsToggled => {
+            state.artifacts.open = !state.artifacts.open;
+            Task::none()
+        }
+        Message::QuestArtifactTabSelected(tab) => {
+            state.artifacts.tab = tab;
+            Task::none()
+        }
         Message::PlanOverlayToggled => {
             state.plan_overlay_open = !state.plan_overlay_open;
             Task::none()
@@ -1062,6 +1228,84 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
         },
         Message::CommitDraftFailed(reason) => {
             state.git_overlay.status = GitOverlayStatus::Failed(reason);
+            Task::none()
+        }
+        Message::PromptOptimizeRequested => commands::request_prompt_optimize(state),
+        Message::PromptOptimizeUndo => {
+            // Roll the composer back to the draft the rewrite replaced.
+            if let Some(original) = state.prompt_optimize.original.take() {
+                state.composer = original;
+                state.prompt_optimize.status = PromptOptimizeStatus::Idle;
+            }
+            Task::none()
+        }
+        Message::OptimizeThreadStarted { original, result } => match result {
+            Ok(thread_id) => {
+                state.prompt_optimize.original = Some(original);
+                state.prompt_optimize.thread = Some(thread_id);
+                commands::start_optimize_turn(state)
+            }
+            Err(error) => {
+                state.prompt_optimize.status =
+                    PromptOptimizeStatus::Failed(format!("optimize thread failed: {error}"));
+                Task::none()
+            }
+        },
+        Message::VoiceInputToggled => voice_input_toggled(state),
+        Message::VoiceInputPulse => {
+            if state.voice_input.recording() {
+                state.voice_input.pulse = !state.voice_input.pulse;
+            }
+            Task::none()
+        }
+        Message::VoiceThreadStarted { result } => match result {
+            Ok(thread_id) => {
+                state.voice_input.thread = Some(thread_id);
+                state.voice_input.status = VoiceInputStatus::Starting;
+                // Dictation anchors where the composer stands now; the
+                // previous run's transcript is dropped.
+                state.voice_input.reanchor(&state.composer);
+                commands::start_voice_session(state)
+            }
+            Err(error) => {
+                state.voice_input.status =
+                    VoiceInputStatus::Failed(format!("voice thread failed: {error}"));
+                Task::none()
+            }
+        },
+        Message::VoiceSessionStarted { result } => {
+            match result {
+                Ok(()) => {
+                    // A stop that landed during startup wins: the task
+                    // is already tearing down.
+                    if state.voice_input.status == VoiceInputStatus::Starting {
+                        state.voice_input.status = VoiceInputStatus::Recording;
+                    }
+                }
+                Err(reason) => {
+                    state.voice_input.status = VoiceInputStatus::Failed(reason);
+                    state.voice_input.pulse = false;
+                }
+            }
+            Task::none()
+        }
+        Message::VoiceTranscriptDelta(delta) => {
+            state.voice_input.apply_delta(&delta, &mut state.composer);
+            Task::none()
+        }
+        Message::VoiceTranscriptDone(text) => {
+            state.voice_input.apply_done(&text, &mut state.composer);
+            Task::none()
+        }
+        Message::VoiceInputStopped => {
+            state.voice_input.thread = None;
+            state.voice_input.stop = None;
+            state.voice_input.pulse = false;
+            // A failure stays on screen until the next attempt; a clean
+            // stop resolves back to idle.
+            if !matches!(state.voice_input.status, VoiceInputStatus::Failed(_)) {
+                state.voice_input.status = VoiceInputStatus::Idle;
+            }
             Task::none()
         }
         Message::Reconnect => reconnect(state),
@@ -1368,12 +1612,112 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
     }
 }
 
+/// The thread the next-task shortcut (Ctrl+G) advances to: the one after
+/// the active thread in the session inventory, wrapping at the end. An
+/// active thread outside the inventory (or none) starts from the top;
+/// `None` only when the inventory is empty.
+fn next_thread<'a>(
+    threads: &'a [ThreadSummary],
+    current: Option<&str>,
+) -> Option<&'a ThreadSummary> {
+    if threads.is_empty() {
+        return None;
+    }
+    let index = current
+        .and_then(|id| threads.iter().position(|thread| thread.id == id))
+        .map_or(0, |index| (index + 1) % threads.len());
+    threads.get(index)
+}
+
 /// Returns the keyboard to the composer input. iced blurs a text input the
 /// moment a press lands outside its bounds, so clicks on picker rows or the
 /// send/stop buttons would otherwise silently swallow everything typed next.
 fn refocus_composer() -> Task<Message> {
     // Focusing the input also parks the caret at the end of the text.
     operation::focus(crate::view::COMPOSER_INPUT_ID)
+}
+
+/// Opens the inline editor on one sent user message, seeding it with the
+/// message's text and attachments. A streaming turn must finish first:
+/// its fork point would not exist yet.
+fn open_edit(state: &mut State, message_id: String) -> Task<Message> {
+    if state.active_turn.is_some() {
+        state.status_board.raise_banner(String::from(
+            "wait for the running turn to finish before editing a message",
+        ));
+        return Task::none();
+    }
+
+    let seed = state
+        .transcript
+        .entries()
+        .iter()
+        .find_map(|entry| match entry {
+            Entry::UserMessage { id, text, images } if *id == message_id => {
+                Some((text.clone(), images.clone()))
+            }
+            _ => None,
+        });
+    let Some((text, images)) = seed else {
+        return Task::none();
+    };
+
+    state.editing = Some(EditDraft {
+        message_id,
+        images,
+        content: text_editor::Content::with_text(&text),
+    });
+    // The hover actions are being replaced by the editor; a stale hover
+    // would leave the old card's bar painted after the swap.
+    state.hovered_message = None;
+    operation::focus(iced::widget::Id::new(chat::EDIT_INPUT_ID))
+}
+
+/// Submits the open edit: forks the thread before the message's turn,
+/// then resends the rewritten prompt once the fork resumes. The reply
+/// chain runs through [`Message::EditForked`] and
+/// [`Message::SessionResumed`].
+fn submit_edit(state: &mut State) -> Task<Message> {
+    if state.pending_edit.is_some() {
+        // A fork is already in flight for this edit.
+        return Task::none();
+    }
+    if state.active_turn.is_some() {
+        state.status_board.raise_banner(String::from(
+            "wait for the running turn to finish before resubmitting the edit",
+        ));
+        return Task::none();
+    }
+
+    let Some(draft) = state.editing.as_ref() else {
+        return Task::none();
+    };
+    let text = draft.content.text();
+    let images = draft.images.clone();
+    let message_id = draft.message_id.clone();
+
+    if text.trim().is_empty() {
+        state
+            .status_board
+            .raise_banner(String::from("the edited message cannot be empty"));
+        return Task::none();
+    }
+    let Some(turn_id) = state.transcript.turn_of(&message_id).map(str::to_string) else {
+        state.status_board.raise_banner(String::from(
+            "this message's turn is unknown, so it cannot be edited",
+        ));
+        return Task::none();
+    };
+    let Some(thread_id) = state.thread_id.clone() else {
+        return Task::none();
+    };
+
+    state.pending_edit = Some(PendingEdit {
+        forked_thread_id: None,
+        text: text.clone(),
+        images: images.clone(),
+    });
+    commands::fork_thread_before_turn(state, thread_id, turn_id)
 }
 
 /// The composer's Enter behavior: an open mention popup takes the key to
@@ -1630,6 +1974,85 @@ fn on_event(state: &mut State, event: GuiEvent) -> Task<Message> {
                     state.git_overlay.draft_thread = None;
                     state.git_overlay.status =
                         GitOverlayStatus::Failed(String::from("draft turn produced no message"));
+                }
+                return Task::none();
+            }
+            // The throwaway optimizer thread also lives outside the main
+            // conversation: swap the composer draft for the rewrite (or
+            // report the silent failure) and archive it, keeping its
+            // traffic out of the transcript.
+            if let Some(optimize_thread) = state.prompt_optimize.thread.clone()
+                && notification_thread_id(&notification) == Some(&optimize_thread)
+            {
+                if let ServerNotification::ItemCompleted(completed) = &notification
+                    && let ThreadItem::AgentMessage { text, .. } = &completed.item
+                {
+                    state.composer = text.clone();
+                    state.prompt_optimize.thread = None;
+                    state.prompt_optimize.status = PromptOptimizeStatus::Idle;
+                    return commands::archive_thread(state, optimize_thread);
+                }
+                if let ServerNotification::TurnCompleted(turn) = &notification
+                    && turn.thread_id == optimize_thread
+                {
+                    state.prompt_optimize.thread = None;
+                    state.prompt_optimize.original = None;
+                    state.prompt_optimize.status = PromptOptimizeStatus::Failed(String::from(
+                        "optimize turn produced no message",
+                    ));
+                }
+                return Task::none();
+            }
+            // The throwaway dictation thread carries the realtime voice
+            // session: transcript events land in the composer, and every
+            // other event on that thread (handoff requests, audio, item
+            // churn) is swallowed so the transcript and status bar stay
+            // clean.
+            if let Some(voice_thread) = state.voice_input.thread.clone()
+                && notification_thread_id(&notification) == Some(&voice_thread)
+            {
+                match codex_gui_bridge::realtime::classify(&notification) {
+                    Some(codex_gui_bridge::realtime::RealtimeEvent::TranscriptDelta {
+                        role,
+                        delta,
+                    }) if role == codex_gui_bridge::realtime::USER_ROLE => {
+                        state.voice_input.apply_delta(&delta, &mut state.composer);
+                    }
+                    Some(codex_gui_bridge::realtime::RealtimeEvent::TranscriptDone {
+                        role,
+                        text,
+                    }) if role == codex_gui_bridge::realtime::USER_ROLE => {
+                        state.voice_input.apply_done(&text, &mut state.composer);
+                    }
+                    Some(codex_gui_bridge::realtime::RealtimeEvent::Failed(message)) => {
+                        // A failed websocket handshake is how providers
+                        // without a realtime channel actually refuse: start
+                        // still opens a session object and the transport
+                        // error only lands asynchronously (verified against
+                        // a real app-server). Route it to the same
+                        // actionable hint as a start-time refusal.
+                        let reason = if message.contains("websocket handshake failed") {
+                            format!("{VOICE_UNSUPPORTED_HINT}（{message}）")
+                        } else {
+                            format!("语音会话出错：{message}")
+                        };
+                        state.voice_input.status = VoiceInputStatus::Failed(reason);
+                        state.voice_input.pulse = false;
+                        stop_voice_task(state);
+                    }
+                    Some(codex_gui_bridge::realtime::RealtimeEvent::Closed(reason))
+                        if matches!(
+                            state.voice_input.status,
+                            VoiceInputStatus::Starting | VoiceInputStatus::Recording
+                        ) =>
+                    {
+                        let reason = reason.unwrap_or_else(|| String::from("连接已关闭"));
+                        state.voice_input.status =
+                            VoiceInputStatus::Failed(format!("语音会话已断开：{reason}"));
+                        state.voice_input.pulse = false;
+                        stop_voice_task(state);
+                    }
+                    _ => {}
                 }
                 return Task::none();
             }
@@ -1932,6 +2355,45 @@ fn notification_thread_id(notification: &ServerNotification) -> Option<&String> 
         ServerNotification::TurnDiffUpdated(n) => Some(&n.thread_id),
         ServerNotification::ThreadTokenUsageUpdated(n) => Some(&n.thread_id),
         ServerNotification::ThreadArchived(n) => Some(&n.thread_id),
+        ServerNotification::ThreadRealtimeStarted(n) => Some(&n.thread_id),
+        ServerNotification::ThreadRealtimeItemAdded(n) => Some(&n.thread_id),
+        ServerNotification::ThreadRealtimeItemStarted(n) => Some(&n.thread_id),
+        ServerNotification::ThreadRealtimeItemTranscriptDelta(n) => Some(&n.thread_id),
+        ServerNotification::ThreadRealtimeItemCompleted(n) => Some(&n.thread_id),
+        ServerNotification::ThreadRealtimeTranscriptDelta(n) => Some(&n.thread_id),
+        ServerNotification::ThreadRealtimeTranscriptDone(n) => Some(&n.thread_id),
+        ServerNotification::ThreadRealtimeOutputAudioDelta(n) => Some(&n.thread_id),
+        ServerNotification::ThreadRealtimeSdp(n) => Some(&n.thread_id),
+        ServerNotification::ThreadRealtimeError(n) => Some(&n.thread_id),
+        ServerNotification::ThreadRealtimeClosed(n) => Some(&n.thread_id),
         _ => None,
+    }
+}
+
+/// The mic button / Ctrl+Shift+V reducer: the first press opens a
+/// throwaway thread and starts the dictation session; a press while live
+/// (or still starting) requests the teardown instead.
+fn voice_input_toggled(state: &mut State) -> Task<Message> {
+    match state.voice_input.status {
+        VoiceInputStatus::Starting | VoiceInputStatus::Recording => {
+            state.voice_input.status = VoiceInputStatus::Stopping;
+            state.voice_input.pulse = false;
+            stop_voice_task(state);
+            Task::none()
+        }
+        VoiceInputStatus::Stopping => Task::none(),
+        VoiceInputStatus::Idle | VoiceInputStatus::Failed(_) => {
+            state.voice_input.status = VoiceInputStatus::Starting;
+            state.voice_input.pulse = false;
+            commands::request_voice_thread(state)
+        }
+    }
+}
+
+/// Signals the running voice task to tear down; the task answers with
+/// [`Message::VoiceInputStopped`] once capture and session are gone.
+fn stop_voice_task(state: &mut State) {
+    if let Some(stop) = state.voice_input.stop.take() {
+        let _ignored = stop.send(());
     }
 }

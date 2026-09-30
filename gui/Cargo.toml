@@ -46,6 +46,9 @@ iced = { version = "=0.14.0", default-features = false, features = [
     "sipper",
     "x11",
     "wayland",
+    # The custom selectable-text widget builds on `iced::advanced`
+    # (layout, renderer, shell) to mirror the stock rich-text path.
+    "advanced",
 ] }
 
 # Native open/save dialogs (the "open folder" flow); async API pairs with
@@ -62,6 +65,14 @@ iced-swdir-tree = "0.9.3"
 # Protocol types for the app-server JSON-RPC surface. Path dependency keeps
 # the wire contract in lockstep with the main repo checkout.
 codex-app-server-protocol = { path = "../codex-rs/app-server-protocol" }
+
+# Microphone capture for the composer's voice input, pinned to the release
+# the upstream realtime voice host uses (codex-rs/voice-host). On Linux the
+# build links ALSA: libasound2-dev (an alsa.pc for pkg-config) is required.
+cpal = "=0.18.2"
+
+# base64 for the realtime audio chunks (thread/realtime/appendAudio).
+base64 = "0.22.1"
 
 anyhow = "1"
 futures = "0.3"

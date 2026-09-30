@@ -60,6 +60,9 @@ pub const DANGER: iced::Color = color!(0xD9534F);
 pub const INFO: iced::Color = color!(0x3B82F6);
 /// Warning orange: the waiting-on-user Quest state.
 pub const WARN: iced::Color = color!(0xD97706);
+/// Text selection background, shared by the inputs and the transcript's
+/// drag selections so highlighted text reads the same everywhere.
+pub const SELECTION: iced::Color = color!(0xB4D5FE);
 
 // ---- Type scale ----
 
@@ -147,6 +150,29 @@ pub fn ghost_button(
     }
 }
 
+/// The code-block copy chip: quiet on the dark code surface, tinted when
+/// hovered or pressed.
+pub fn code_copy_button(
+    _theme: &Theme,
+    status: iced::widget::button::Status,
+) -> iced::widget::button::Style {
+    let background = match status {
+        iced::widget::button::Status::Hovered | iced::widget::button::Status::Pressed => {
+            Some(color!(0x333A44).into())
+        }
+        _ => None,
+    };
+    iced::widget::button::Style {
+        background,
+        text_color: BG,
+        border: iced::Border {
+            radius: RADIUS_SM.into(),
+            ..iced::Border::default()
+        },
+        ..iced::widget::button::Style::default()
+    }
+}
+
 /// An activity-rail entry: transparent until active, then a white chip.
 pub fn rail_button(
     active: bool,
@@ -173,7 +199,7 @@ pub fn bare_input(
         icon: MUTED,
         placeholder: FAINT,
         value: TEXT,
-        selection: color!(0xB4D5FE),
+        selection: SELECTION,
     }
 }
 

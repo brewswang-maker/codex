@@ -43,8 +43,25 @@ fn chunk_boundaries_do_not_change_the_final_items() {
 
 #[test]
 fn render_returns_an_element_for_parsed_content() {
-    let content = streamed_content(&["# Title\n\nbody"]);
+    let content = streamed_content(&[
+        "# Title\n\nbody\n\n",
+        "```rust\nfn main() {}\n```\n\n",
+        "- bullet\n",
+    ]);
 
-    // A smoke check that the view layer accepts the streamed content.
-    let _element = render(&content);
+    // A smoke check that the view layer accepts the streamed content,
+    // including the selectable code-block override.
+    let _element = render(&content, "msg-1", None, None);
+}
+
+#[test]
+fn code_copy_keys_are_stable_and_content_scoped() {
+    use super::code_copy_key;
+
+    // Keys must reproduce across re-renders so the feedback check can
+    // match, and stay distinct per message and per block content.
+    let key = code_copy_key("m1", "let x = 1;");
+    assert_eq!(key, code_copy_key("m1", "let x = 1;"));
+    assert_ne!(key, code_copy_key("m1", "let x = 2;"));
+    assert_ne!(key, code_copy_key("m2", "let x = 1;"));
 }

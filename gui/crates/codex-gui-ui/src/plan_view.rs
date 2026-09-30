@@ -102,7 +102,7 @@ fn actions(plan: &TurnPlan) -> Element<'static, Message> {
             .padding([4, 10])
             .style(quiet_action)
             .on_press(Message::CopyMessage {
-                id: String::from("plan"),
+                key: String::from("plan"),
                 text: payload,
             }),
         button(
