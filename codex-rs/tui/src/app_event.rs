@@ -22,6 +22,7 @@ use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::MarketplaceAddResponse;
 use codex_app_server_protocol::MarketplaceRemoveResponse;
 use codex_app_server_protocol::MarketplaceUpgradeResponse;
+use codex_app_server_protocol::McpServerOauthLoginResponse;
 use codex_app_server_protocol::McpServerStatus;
 use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::PluginInstallResponse;
@@ -61,7 +62,6 @@ use codex_app_server_protocol::AskForApproval;
 use codex_config::types::ApprovalsReviewer;
 use codex_features::Feature;
 use codex_plugin::PluginCapabilitySummary;
-use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_realtime_webrtc::StartedRealtimeWebrtcSession;
@@ -273,6 +273,7 @@ pub(crate) struct AgentsOverviewThreadRefresh {
     pub(crate) threads: std::collections::HashMap<ThreadId, Option<Thread>>,
     pub(crate) last_messages: std::collections::HashMap<ThreadId, String>,
     pub(crate) recent_seed_complete: bool,
+    pub(crate) discovery: Option<crate::app::agents_overview_discovery::AgentsOverviewDiscovery>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -286,6 +287,7 @@ pub(crate) enum AppEvent {
     CloseMisalignmentReview,
     /// Open the live command center for recent and locally retained root sessions.
     OpenAgentsOverview,
+    ShowMoreAgentsOverview,
     /// Create an empty thread from the command center.
     NewAgentsOverviewSession {
         cwd: Option<AbsolutePathBuf>,
@@ -304,6 +306,14 @@ pub(crate) enum AppEvent {
         cwd: Option<AbsolutePathBuf>,
     },
     AgentsOverviewWorktreeCreated(Result<crate::app::PendingWorktree, String>),
+    /// Fork the selected dashboard conversation and open the new session.
+    ForkAgentsOverviewThread {
+        thread_id: ThreadId,
+    },
+    /// Run the existing fork action after selection events have been processed.
+    ForkAgentsOverviewThreadReady {
+        thread_id: ThreadId,
+    },
     /// Rename a task directly from the shared dashboard.
     RenameAgentsOverviewThread {
         thread_id: ThreadId,
@@ -313,17 +323,6 @@ pub(crate) enum AppEvent {
     SuggestThreadName {
         thread_id: ThreadId,
         request_id: Uuid,
-    },
-    /// Generate a next-message suggestion for one live completed turn.
-    GeneratePromptSuggestion(crate::prompt_suggestions::SuggestionRequest),
-    PromptSuggestionStarted {
-        request: crate::prompt_suggestions::SuggestionRequest,
-        result: Result<(String, Option<CollaborationMode>), String>,
-    },
-    PromptSuggestionFinished {
-        request: crate::prompt_suggestions::SuggestionRequest,
-        temporary_thread_id: ThreadId,
-        text: Option<String>,
     },
     /// Register a hidden title-generation thread started in the background.
     ThreadTitleStarted {
@@ -1077,6 +1076,16 @@ pub(crate) enum AppEvent {
         thread_id: Option<ThreadId>,
     },
 
+    StartMcpLogin {
+        name: String,
+        thread_id: ThreadId,
+    },
+
+    McpLoginStarted {
+        request_id: String,
+        result: Result<McpServerOauthLoginResponse, String>,
+    },
+
     /// Result of fetching MCP inventory via app-server RPCs.
     McpInventoryLoaded {
         result: Result<Vec<McpServerStatus>, String>,
@@ -1219,6 +1228,20 @@ pub(crate) enum AppEvent {
 
     /// Read the owning server preference before showing the voice picker.
     OpenRealtimeSettings,
+    OpenRealtimeSoundDevices,
+    OpenRealtimeVoices,
+    OpenRealtimeDevicePicker {
+        kind: codex_realtime_webrtc::AudioDeviceKind,
+    },
+    RealtimeDevicesListed {
+        origin: Option<ThreadId>,
+        kind: codex_realtime_webrtc::AudioDeviceKind,
+        result: Result<Vec<codex_realtime_webrtc::AudioDevice>, String>,
+    },
+    PersistRealtimeDevice {
+        kind: codex_realtime_webrtc::AudioDeviceKind,
+        name: Option<String>,
+    },
 
     /// Save the voice for subsequent conversations through the app server.
     PersistRealtimeVoiceSelection {

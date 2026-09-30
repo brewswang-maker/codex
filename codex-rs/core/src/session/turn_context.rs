@@ -27,7 +27,6 @@ use codex_protocol::config_types::ShellEnvironmentPolicy;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::openai_models::MODEL_SPECIALTY_CYBER;
 use codex_protocol::openai_models::ModelInfo;
-use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::permissions::RawFileSystemSandboxPolicy;
 use codex_protocol::protocol::EnvironmentConfig;
 use codex_protocol::protocol::EnvironmentConfigState;
@@ -978,7 +977,10 @@ impl Session {
             use_model_token_budget_defaults,
             model_info,
         );
-        if step_settings.reasoning_effort() == Some(&ReasoningEffort::Persistent) {
+        if per_turn_config
+            .features
+            .persistent_execution_enabled(step_settings.reasoning_effort())
+        {
             super::time_reminder::apply_persistent_defaults(&mut per_turn_config);
         }
         per_turn_config.service_tier = step_settings.service_tier.clone();
@@ -1226,6 +1228,7 @@ impl Session {
             per_turn_config.codex_home.as_path(),
         );
         let skills_snapshot = if matches!(build_mode, TurnContextBuildMode::InjectItems)
+            || crate::guardian::is_basic_session_source(&session_configuration.session_source)
             || (per_turn_config
                 .features
                 .enabled(Feature::SkipHostSkillDiscovery)

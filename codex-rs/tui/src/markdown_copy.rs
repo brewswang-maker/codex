@@ -14,6 +14,8 @@ use pulldown_cmark::Tag;
 use crate::clipboard_copy::CopyFormat;
 use crate::terminal_hyperlinks::LogicalLineSource;
 
+pub(crate) mod table;
+
 // Bound retained inline stacks and container prefixes independently of parser nesting.
 pub(crate) const MAX_COPY_DEPTH: usize = 64;
 
@@ -24,6 +26,8 @@ pub(crate) enum Inline {
     Link(Arc<str>),
     Delimiter(&'static str),
     Code,
+    /// Copy a generated file target literally without changing mixed-selection Markdown.
+    Literal,
     /// Balance parser events for links whose visible text has no copied wrapper.
     Ignored,
 }
@@ -56,12 +60,15 @@ pub(crate) struct CopyLine {
     /// Restore the containing item when a multiline selection starts in its later paragraph.
     pub(crate) item_prefix: String,
     pub(crate) code: bool,
+    pub(crate) table: Option<table::TableLine>,
+    table_cell: bool,
     pub(crate) rule: bool,
     pub(crate) heading: usize,
     pub(crate) hard_break: bool,
     /// A visual separator inserted between sibling list items, never source content.
     pub(crate) omit: bool,
     runs: Vec<(Range<usize>, Vec<Inline>)>,
+    literal_ranges: Vec<Range<usize>>,
 }
 
 impl CopyLine {
@@ -69,9 +76,13 @@ impl CopyLine {
         if length == 0 {
             return;
         }
-        let mut inline = inline[..inline.len().min(MAX_COPY_DEPTH)]
+        let inline = &inline[..inline.len().min(MAX_COPY_DEPTH)];
+        let literal = inline
             .iter()
-            .filter(|mark| **mark != Inline::Ignored)
+            .any(|mark| matches!(mark, Inline::Code | Inline::Literal));
+        let mut inline = inline
+            .iter()
+            .filter(|mark| !matches!(mark, Inline::Ignored | Inline::Literal))
             .cloned()
             .collect::<Vec<_>>();
         inline.sort();
@@ -80,6 +91,16 @@ impl CopyLine {
             .runs
             .last()
             .map_or(/*default*/ 0, |(range, _)| range.end);
+        // Keep literal spans separate so they never split context-sensitive prose escaping.
+        if literal {
+            if let Some(range) = self.literal_ranges.last_mut()
+                && range.end == start
+            {
+                range.end += length;
+            } else {
+                self.literal_ranges.push(start..start + length);
+            }
+        }
         if let Some((range, previous)) = self.runs.last_mut()
             && previous == &inline
         {
@@ -87,6 +108,14 @@ impl CopyLine {
         } else {
             self.runs.push((start..start + length, inline));
         }
+    }
+
+    fn is_literal(&self, range: &Range<usize>) -> bool {
+        !range.is_empty()
+            && self
+                .literal_ranges
+                .iter()
+                .any(|literal| literal.start <= range.start && range.end <= literal.end)
     }
 
     fn render(&self, text: &str, range: Range<usize>, depth: usize) -> String {
@@ -117,7 +146,12 @@ impl CopyLine {
             match mark {
                 Some(Inline::Code) => {
                     let content = &text[start..end];
-                    let fence = fence(content, /*minimum*/ 1);
+                    let content = if self.table_cell {
+                        content.replace('|', "\\|")
+                    } else {
+                        content.to_owned()
+                    };
+                    let fence = fence(&content, /*minimum*/ 1);
                     let padding =
                         if content.starts_with(['`', ' ']) || content.ends_with(['`', ' ']) {
                             if content.chars().all(|ch| ch == ' ') {
@@ -151,11 +185,12 @@ impl CopyLine {
                                 .replace('&', "&amp;")
                                 .replace('<', "%3C")
                                 .replace('>', "%3E")
+                                .replace('|', "%7C")
                                 .replace('\n', "%0A")
                                 .replace('\r', "%0D");
                             append_inline(&mut out, &format!("[{trimmed}](<{destination}>)"));
                         }
-                        Inline::Code | Inline::Ignored => unreachable!(),
+                        Inline::Code | Inline::Literal | Inline::Ignored => unreachable!(),
                     }
                     out.push_str(&body[body.trim_end().len()..]);
                 }
@@ -244,6 +279,65 @@ impl SelectedLine {
 }
 
 pub(crate) fn selection(lines: &[SelectedLine], plain: &str) -> (String, CopyFormat) {
+    // Soft wraps and streamed fragments of the same logical line are already coalesced.
+    if let [line] = lines
+        && line
+            .source
+            .copy
+            .as_ref()
+            .is_some_and(|copy| copy.is_literal(&line.range))
+    {
+        return (plain.to_owned(), CopyFormat::PlainText);
+    }
+    // Quote-only selections omit quote markers. Tables and task lists still need their
+    // semantic metadata to reconstruct cell fragments and preserve checkbox state.
+    let mut content = lines
+        .iter()
+        .filter(|line| {
+            !line.range.is_empty() && !line.source.copy.as_ref().is_some_and(|copy| copy.omit)
+        })
+        .peekable();
+    let quote_only = content.peek().is_some()
+        && content.all(|line| {
+            line.source
+                .copy
+                .as_ref()
+                .is_some_and(|copy| copy.prefix.contains("> "))
+        });
+    let unquoted;
+    let lines = if quote_only {
+        if !lines.iter().any(|line| {
+            (!line.range.is_empty() || line.source.text.is_empty())
+                && line.source.copy.as_ref().is_some_and(|copy| {
+                    !copy.omit
+                        && (copy.table.is_some()
+                            || copy.item_prefix.contains("[x] ")
+                            || copy.item_prefix.contains("[ ] "))
+                })
+        }) {
+            return (plain.to_owned(), CopyFormat::PlainText);
+        }
+        unquoted = lines
+            .iter()
+            .map(|line| {
+                let mut source = line.source.clone();
+                if let Some(copy) = source.copy.as_mut() {
+                    let copy = Arc::make_mut(copy);
+                    copy.prefix = copy.prefix.replace("> ", "");
+                    copy.continuation = copy.continuation.replace("> ", "");
+                    copy.item_prefix = copy.item_prefix.replace("> ", "");
+                }
+                SelectedLine {
+                    source,
+                    range: line.range.clone(),
+                    separator: line.separator.clone(),
+                }
+            })
+            .collect::<Vec<_>>();
+        &unquoted
+    } else {
+        lines
+    };
     let rich = lines.iter().any(|line| {
         !line.range.is_empty()
             && line
@@ -288,7 +382,52 @@ pub(crate) fn selection(lines: &[SelectedLine], plain: &str) -> (String, CopyFor
             first = false;
             continue;
         }
-        if line.source.copy_as_prose {
+        if let Some(table) = line
+            .source
+            .copy
+            .as_ref()
+            .and_then(|copy| copy.table.as_ref())
+        {
+            let mut selected = vec![line];
+            while let Some(next) = lines.peek()
+                && next
+                    .source
+                    .copy
+                    .as_ref()
+                    .and_then(|copy| copy.table.as_ref())
+                    .is_some_and(|next| Arc::ptr_eq(&next.table, &table.table))
+            {
+                selected.extend(lines.next());
+            }
+            let entire_selection = first && lines.peek().is_none();
+            let (mut body, format) = table::render(&selected, table, entire_selection);
+            if format == CopyFormat::PlainText {
+                body.retain(|ch| !ch.is_control() || matches!(ch, '\n' | '\t'));
+                return (body, format);
+            }
+            let continuation = line
+                .source
+                .copy
+                .as_ref()
+                .map_or("", |copy| copy.continuation.as_str());
+            let continuation = dedent(continuation, indentation.unwrap_or(/*default*/ 0));
+            for (index, row) in body.lines().enumerate() {
+                if index > 0 {
+                    out.push('\n');
+                    out.push_str(&continuation);
+                } else {
+                    out.push_str(&prefix);
+                }
+                out.push_str(row);
+            }
+            if lines
+                .peek()
+                .is_some_and(|next| next.separator == "\n" && !next.range.is_empty())
+            {
+                out.push('\n');
+                out.push_str(continuation.trim_end());
+            }
+        } else if line.source.copy_as_prose {
             let text = &line.source.text[line.range.clone()];
             push_prose_fragment(&mut out, &escape(text));
         } else if let Some(copy) = &line.source.copy

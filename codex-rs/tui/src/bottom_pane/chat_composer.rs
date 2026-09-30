@@ -74,11 +74,6 @@
 //! - Local in-session history (full text + text elements + local/remote image attachments).
 //!
 //! Plain-text history recall strips images and their placeholders.
-//!
-//! Follow-up suggestions live outside the draft. Empty, focused, editable composers show
-//! them dimly; Tab copies one into the draft and a separate Enter submits. Escape cancels
-//! even a pending suggestion. Popups, Vim Escape, attachments, and paste bursts take precedence.
-//! Interactive transcript footers hide the suggestion and its reserved height until editing resumes.
 //! When recalling a persistent entry, encoded task links restore atomic elements and bindings.
 //! Recall moves the cursor to the end. Question editors copy primary history on recall/search;
 //! draft capture cancels previews, and restoration resets traversal.
@@ -119,6 +114,7 @@
 //!
 //! # Submission and Prompt Expansion
 //!
+//! Multiline pastes continue blockquote prefixes.
 //! `Enter` submits immediately. `Tab` requests queuing while a task is running; if no task is
 //! running, `Tab` submits just like Enter so input is never dropped.
 //! Vim Replace shares Insert's composer actions; only textarea editing differs.
@@ -386,13 +382,11 @@ mod draft_state;
 mod footer_state;
 mod history_search;
 mod inline_input;
-mod keymap_bindings;
 mod mouse;
 mod paste_input;
 mod popup_state;
 mod reconnect;
 pub(crate) use reconnect::RestrictedInputMode;
-mod prompt_suggestions;
 mod slash_input;
 mod sparkle;
 mod status_surface;
@@ -569,6 +563,7 @@ pub(crate) struct ChatComposerConfig {
     pub(crate) shell_commands_enabled: bool,
     /// Whether pasting a file path can attach local images.
     pub(crate) image_paste_enabled: bool,
+    pub(crate) blockquote_paste_enabled: bool,
     /// Strip leading and trailing whitespace from submissions.
     pub(crate) trim_submission: bool,
     /// Embedded editors reset Vim only when their owner accepts the answer.
@@ -582,6 +577,7 @@ impl Default for ChatComposerConfig {
             slash_commands_enabled: true,
             shell_commands_enabled: true,
             image_paste_enabled: true,
+            blockquote_paste_enabled: true,
             trim_submission: true,
             reset_vim_on_submission: true,
         }
@@ -589,16 +585,14 @@ impl Default for ChatComposerConfig {
 }
 
 impl ChatComposerConfig {
-    /// A minimal preset for plain-text inputs embedded in other surfaces.
-    ///
-    /// This disables popups, slash and shell commands, and image-path attachment behavior
-    /// so the composer behaves like a simple notes field.
+    /// Text answers support Markdown, without popups, commands, or image attachments.
     pub(crate) const fn plain_text() -> Self {
         Self {
             popups_enabled: false,
             slash_commands_enabled: false,
             shell_commands_enabled: false,
             image_paste_enabled: false,
+            blockquote_paste_enabled: true,
             trim_submission: true,
             reset_vim_on_submission: true,
         }
@@ -624,9 +618,6 @@ pub(crate) struct ChatComposer {
     luna_reserve_active: bool,
     attachments: AttachmentState,
     placeholder_text: String,
-    prompt_suggestion: Option<crate::prompt_suggestions::PromptSuggestion>,
-    suggestion_tab_reserved: KeymapContextSet,
-    suggestion_tab_accepted: bool,
     blocks_direct_input: bool,
     is_task_running: bool,
     queue_submissions: bool,
@@ -803,9 +794,6 @@ impl ChatComposer {
             luna_reserve_active: false,
             attachments: AttachmentState::default(),
             placeholder_text,
-            prompt_suggestion: None,
-            suggestion_tab_reserved: KeymapContextSet::default(),
-            suggestion_tab_accepted: false,
             blocks_direct_input: false,
             is_task_running: false,
             queue_submissions: false,
@@ -1038,6 +1026,51 @@ impl ChatComposer {
     #[allow(dead_code, reason = "Used by later layers of the TUI refresh stack.")]
     pub(crate) fn set_app_event_sender(&mut self, app_event_tx: AppEventSender) {
         self.app_event_tx = app_event_tx;
+    }
+
+    /// Replace composer, editor, and footer-hint key bindings from one runtime snapshot.
+    ///
+    /// Submit and queue bindings are cached here because composer dispatch must
+    /// check them before generic textarea editing. The embedded textarea receives
+    /// the same snapshot's editor bindings so a live remap cannot leave submit
+    /// keys updated while cursor/editing keys still use old defaults.
+    pub(crate) fn set_keymap_bindings(&mut self, keymap: &RuntimeKeymap) {
+        self.submit_keys = keymap.composer.submit.clone();
+        self.queue_keys = keymap.composer.queue.clone();
+        self.toggle_shortcuts_keys = keymap.composer.toggle_shortcuts.clone();
+        self.history_search_previous_keys = keymap.composer.history_search_previous.clone();
+        self.history_search_next_keys = keymap.composer.history_search_next.clone();
+        self.editor_keymap = keymap.editor.clone();
+        self.vim_normal_keymap = keymap.vim_normal.clone();
+        self.draft.textarea.set_keymap_bindings(keymap);
+        self.footer.external_editor_key =
+            keymap.primary_hint(KeymapContext::Global, "open_external_editor");
+        self.footer.show_warnings_key = keymap.primary_hint(KeymapContext::Global, "open_warnings");
+        self.footer.show_transcript_key =
+            keymap.primary_hint(KeymapContext::Global, "open_transcript");
+        self.footer.find_transcript_key =
+            keymap.primary_hint(KeymapContext::Global, "find_transcript");
+        self.footer.focus_activity_key =
+            keymap.primary_hint(KeymapContext::Global, "focus_activity");
+        self.footer.insert_newline_key =
+            match keymap.primary_hint(KeymapContext::Editor, "insert_newline") {
+                hint @ Some(ShortcutHint::Chord { .. }) => hint,
+                _ => footer_insert_newline_key(
+                    &keymap.editor.insert_newline,
+                    self.footer.use_shift_enter_hint,
+                )
+                .map(ShortcutHint::from),
+            };
+        self.footer.queue_key = keymap.primary_hint(KeymapContext::Composer, "queue");
+        self.footer.toggle_shortcuts_key =
+            keymap.primary_hint(KeymapContext::Composer, "toggle_shortcuts");
+        self.footer.history_search_key =
+            keymap.primary_hint(KeymapContext::Composer, "history_search_previous");
+        self.footer.reasoning_down_key =
+            keymap.primary_hint(KeymapContext::Chat, "decrease_reasoning_effort");
+        self.footer.reasoning_up_key =
+            keymap.primary_hint(KeymapContext::Chat, "increase_reasoning_effort");
+        self.footer.toggle_voice_key = keymap.primary_hint(KeymapContext::Chat, "toggle_voice");
     }
 
     /// Return the contexts whose handlers can consume the next composer key.
@@ -1922,12 +1955,6 @@ impl ChatComposer {
 
     /// Handle a key event coming from the main UI.
     pub fn handle_key_event(&mut self, key_event: KeyEvent) -> (InputResult, bool) {
-        self.suggestion_tab_accepted &= key_event.code == KeyCode::Tab
-            && key_event.modifiers == KeyModifiers::NONE
-            && key_event.kind != KeyEventKind::Release;
-        if self.suggestion_tab_accepted {
-            return (InputResult::None, false);
-        }
         if !self.draft.input_enabled {
             return (InputResult::None, false);
         }
@@ -3483,9 +3510,6 @@ impl ChatComposer {
             self.draft.textarea.enter_vim_insert_mode();
             return (InputResult::None, true);
         }
-        if self.handle_prompt_suggestion_key(key_event) {
-            return (InputResult::None, true);
-        }
         if key_event.code == KeyCode::Esc {
             if self.is_empty() {
                 let next_mode = esc_hint_mode(self.footer.mode, self.is_task_running);
@@ -4349,9 +4373,6 @@ impl ChatComposer {
     }
 
     pub fn set_task_running(&mut self, running: bool) {
-        if running {
-            self.clear_prompt_suggestion();
-        }
         self.is_task_running = running;
     }
 
@@ -4597,7 +4618,7 @@ impl ChatComposer {
             popup: popup_rect,
             footer: footer_rect,
         } = self.layout_with_options(area, options);
-        self.render_status_surface(status, buf);
+        self.render_status_surface(status, buf, options);
         if self.popups.active.is_above_composer()
             && options.command_popup_placement != CommandPopupPlacement::Hidden
         {
@@ -4974,11 +4995,9 @@ impl ChatComposer {
                 }
             }
         }
-        if let Some(lines) = self.prompt_suggestion_lines(textarea_rect.width, options) {
-            Paragraph::new(lines).render(textarea_rect, buf);
-        } else if !self.draft.input_enabled || textarea_is_empty {
+        if !self.draft.input_enabled || textarea_is_empty {
             let text = if self.draft.input_enabled {
-                self.placeholder_text.to_string()
+                self.placeholder_text.as_str().to_string()
             } else {
                 self.draft
                     .input_disabled_placeholder

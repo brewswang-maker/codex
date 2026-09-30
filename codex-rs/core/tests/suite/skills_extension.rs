@@ -128,8 +128,8 @@ struct StaticSkillProvider {
     main_prompt_contents: Option<String>,
 }
 
-struct CatalogSkillProvider {
-    catalog: SkillCatalog,
+pub(super) struct CatalogSkillProvider {
+    pub(super) catalog: SkillCatalog,
 }
 
 struct PausedCatalogSkillProvider {
@@ -2929,7 +2929,7 @@ async fn production_turn_keeps_rebalanced_catalogs_stable_after_compaction_and_r
     let executor_address = listener.local_addr()?;
     let executor_url = format!("ws://{executor_address}");
     drop(listener);
-    let runtime_paths = codex_exec_server::ExecServerRuntimePaths::new(
+    let runtime_paths = codex_exec_server::ExecServerRuntimeOptions::new(
         std::env::current_exe()?,
         /*codex_linux_sandbox_exe*/ None,
     )?;
@@ -3089,6 +3089,7 @@ async fn production_turn_keeps_rebalanced_catalogs_stable_after_compaction_and_r
         .thread_manager
         .start_thread(StartThreadOptions {
             initial_history: InitialHistory::Resumed(ResumedHistory {
+                history_revision: history.revision,
                 conversation_id: history.thread_id,
                 history: Arc::new(history.items),
                 rollout_path: cloud_thread.session_configured.rollout_path.clone(),
