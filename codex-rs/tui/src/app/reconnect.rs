@@ -147,6 +147,11 @@ impl App {
         {
             session.approval_policy = policy;
         }
+        if let Some(reviewer) = self.runtime_approvals_reviewer_override
+            && reviewer == cached.approvals_reviewer
+        {
+            session.approvals_reviewer = reviewer;
+        }
         if let Some(profile) = &self.runtime_permission_profile_override
             && profile.permission_profile == cached.permission_profile
             && profile.active_permission_profile == cached.active_permission_profile
@@ -484,6 +489,12 @@ impl App {
             matches!(bootstrap.auth_mode, Some(TelemetryAuthMode::Chatgpt)),
         );
         if self.chat_widget.has_chatgpt_account() {
+            crate::security_setup::prefetch(
+                &self.config,
+                app_server,
+                self.app_event_tx.clone(),
+                self.chat_widget.security_setup_request_id,
+            );
             crate::daybreak::prefetch_notice(
                 &self.config,
                 app_server,

@@ -7,6 +7,8 @@ mod mcp_login_tests;
 mod daybreak_tests;
 #[path = "tests/math_interruption_tests.rs"]
 mod math_interruption_tests;
+#[path = "tests/security_setup_tests.rs"]
+mod security_setup_tests;
 
 #[path = "tests/advanced_reasoning_tests.rs"]
 mod advanced_reasoning_tests;
@@ -4239,8 +4241,15 @@ async fn inactive_thread_file_change_approval_recovers_buffered_changes() {
 #[tokio::test]
 async fn active_thread_file_change_approval_recovers_buffered_changes() {
     let (mut app, _app_event_rx, _op_rx) = make_test_app_with_channels().await;
+    let app_server = crate::start_embedded_app_server_for_picker(&app.config)
+        .await
+        .expect("embedded app server");
     let thread_id = ThreadId::new();
     app.active_thread_id = Some(thread_id);
+    app.primary_thread_id = Some(ThreadId::new());
+    app.agents_overview
+        .dispatched_requests
+        .insert(thread_id, Vec::new());
     app.startup_protected_input_boundary = true;
     app.enqueue_thread_notification(
         thread_id,
@@ -4273,10 +4282,15 @@ async fn active_thread_file_change_approval_recovers_buffered_changes() {
             grant_root: None,
         },
     };
-    assert_eq!(
+    app.handle_app_server_event(
+        &app_server,
+        codex_app_server_client::AppServerEvent::ServerRequest(Box::new(request.clone())),
+    )
+    .await;
+    assert!(app.agents_overview.dispatched_requests[&thread_id].is_empty());
+    assert!(
         app.pending_app_server_requests
-            .note_server_request(&request),
-        None
+            .contains_server_request(&request)
     );
     app.chat_widget.handle_server_notification(
         agent_message_delta_notification(thread_id, "turn-active-approval", "agent-1", "streaming"),
@@ -4309,6 +4323,7 @@ async fn active_thread_file_change_approval_recovers_buffered_changes() {
     let destination = app.chat_widget.config_ref().cwd.join("visible-target.md");
     assert!(rendered.contains("Description: Apply proposed file edits"));
     assert!(rendered.contains(&format!("Destination: {}", destination.display())));
+    app_server.shutdown().await.expect("shutdown app server");
 }
 
 #[tokio::test]
@@ -5226,11 +5241,11 @@ async fn side_parent_status_prioritizes_input_over_approval() -> Result<()> {
     );
     assert_snapshot!(
         format!("{input_footer}\n{approval_footer}\n{cleared_footer}"),
-        @r"
-        Side from main thread · main needs input · ctrl+/ to switch · ctrl+c to close
-        Side from main thread · main needs approval · ctrl+/ to switch · ctrl+c to close
-        Side from main thread · ctrl+/ to switch · ctrl+c to close
-        "
+        @"
+    Side from main thread · main needs input · ⌃/ to switch · ⌃c to close
+    Side from main thread · main needs approval · ⌃/ to switch · ⌃c to close
+    Side from main thread · ⌃/ to switch · ⌃c to close
+    "
     );
 
     Ok(())
@@ -6695,7 +6710,7 @@ async fn capped_resize_reflow_renders_recent_suffix_only() {
             .map(rendered_line_text)
             .collect::<Vec<_>>(),
         vec![
-            "Earlier messages are available — press ctrl+t to view the full transcript".to_string(),
+            "Earlier messages are available — press ⌃t to view the full transcript".to_string(),
             String::new(),
             "cell 18".to_string(),
             String::new(),
