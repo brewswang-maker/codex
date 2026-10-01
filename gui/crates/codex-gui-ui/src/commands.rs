@@ -207,6 +207,9 @@ pub(crate) fn submit(state: &mut State) -> Task<Message> {
     }
 
     let text = std::mem::take(&mut state.composer);
+    // The editor box renders `composer_draft`, not `composer`: reset the
+    // buffer too, or the sent text stays visible in the input.
+    state.composer_draft = iced::widget::text_editor::Content::new();
     let images = std::mem::take(&mut state.attachments.images);
     submit_text(state, text, images)
 }

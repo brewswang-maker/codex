@@ -3519,6 +3519,25 @@ fn slash_submit_is_gated_on_a_live_session() {
 }
 
 #[test]
+fn submit_clears_the_editor_buffer_not_just_the_text() {
+    let mut state = State::new(Flags::default_app_server());
+    state.thread_id = Some(String::from("thread-1"));
+    state.status = Status::Ready;
+    let (outbound, _frames) = tokio::sync::mpsc::channel(8);
+    state.client = Some(codex_gui_bridge::Client::new(outbound));
+
+    state.set_composer("a long multi-line prompt");
+    assert!(!state.composer_draft.text().is_empty());
+
+    let _ = update(&mut state, Message::Submit);
+
+    // The editor box renders `composer_draft`, not `composer`: both must
+    // be gone, or the sent prompt stays visible in the input.
+    assert_eq!(state.composer, "");
+    assert!(state.composer_draft.text().is_empty());
+}
+
+#[test]
 fn mcp_inventory_lands_in_the_settings_panel() {
     let mut state = State::new(Flags::default_app_server());
     assert!(!state.mcp_loaded);
