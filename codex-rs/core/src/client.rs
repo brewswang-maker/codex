@@ -626,6 +626,7 @@ impl ModelClient {
             restored_history: self.restored_history,
             request_contributors: self.request_contributors.clone(),
             executed_tool_calls: self.executed_tool_calls.clone(),
+            api_key_cyber_access_programs: self.api_key_cyber_access_programs,
         }
     }
 
