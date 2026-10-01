@@ -14,12 +14,16 @@ use codex_gui_core::Approvals;
 use codex_gui_core::ElicitationDraft;
 use codex_gui_core::Elicitations;
 use codex_gui_core::GitInfo;
+use codex_gui_core::HarnessBoard;
+use codex_gui_core::KnowledgeBase;
 use codex_gui_core::MarkdownStream;
 use codex_gui_core::Mentions;
 use codex_gui_core::PinnedThreads;
+use codex_gui_core::PluginMarket;
 use codex_gui_core::QuestionDraft;
 use codex_gui_core::Questions;
 use codex_gui_core::RecentProjects;
+use codex_gui_core::Scheduler;
 use codex_gui_core::Sessions;
 use codex_gui_core::Settings;
 use codex_gui_core::SkillsBoard;
@@ -229,6 +233,103 @@ pub enum PendingModelApply {
     },
 }
 
+/// A one-line panel notice: the text plus whether it reports a failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PanelNotice {
+    /// The message shown in the panel.
+    pub text: String,
+    /// Whether the notice reports a failure.
+    pub error: bool,
+}
+
+impl PanelNotice {
+    /// A success notice.
+    pub fn ok(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            error: false,
+        }
+    }
+
+    /// A failure notice.
+    pub fn err(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            error: true,
+        }
+    }
+}
+
+/// The scheduled-task panel: visibility, the new-task form, feedback.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SchedulerPanel {
+    /// Whether the panel replaces the whole surface.
+    pub open: bool,
+    /// New-task name draft.
+    pub draft_name: String,
+    /// `true` schedules a one-shot run, `false` a recurring one.
+    pub draft_once: bool,
+    /// One-shot delay draft (`90s` / `30m` / `2h` / `1d`).
+    pub draft_delay: String,
+    /// Recurring interval draft.
+    pub draft_interval: String,
+    /// New-task prompt draft (submitted as a composer turn).
+    pub draft_prompt: String,
+    /// The last form outcome.
+    pub notice: Option<PanelNotice>,
+}
+
+/// The knowledge panel: visibility, the search query, the entry form.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct KnowledgePanel {
+    /// Whether the panel replaces the whole surface.
+    pub open: bool,
+    /// Search query filtering the entry list.
+    pub query: String,
+    /// Entry-form title draft.
+    pub draft_title: String,
+    /// Entry-form body draft.
+    pub draft_body: String,
+    /// Entry-form tag draft, comma-separated.
+    pub draft_tags: String,
+    /// The entry being edited; `None` creates a new one.
+    pub editing: Option<String>,
+    /// The last form outcome.
+    pub notice: Option<PanelNotice>,
+}
+
+/// The plugin-market panel: visibility and feedback; the source draft
+/// lives in the persisted [`codex_gui_core::PluginMarket`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PluginMarketPanel {
+    /// Whether the panel replaces the whole surface.
+    pub open: bool,
+    /// The last operation outcome.
+    pub notice: Option<PanelNotice>,
+}
+
+/// The Better Harness panel: visibility, the new-session form, the
+/// review form, and which session's detail is expanded.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HarnessPanel {
+    /// Whether the panel replaces the whole surface.
+    pub open: bool,
+    /// The session whose detail (log, review, repairs) is expanded.
+    pub selected: Option<String>,
+    /// New-session name draft.
+    pub draft_name: String,
+    /// New-session command draft (the external agent invocation).
+    pub draft_command: String,
+    /// New-session working-directory draft; blank inherits the GUI's.
+    pub draft_cwd: String,
+    /// Review verdict draft for the selected session.
+    pub review_verdict: String,
+    /// Review findings draft, one finding per line.
+    pub review_findings: String,
+    /// The last operation outcome.
+    pub notice: Option<PanelNotice>,
+}
+
 /// Everything the update loop and the views need.
 pub struct State {
     /// Launch flags of the app-server connection (subscription identity).
@@ -376,6 +477,29 @@ pub struct State {
     pub expanded_command_groups: BTreeSet<String>,
     /// Composer buffer.
     pub composer: String,
+    /// Multi-line editor buffer mirroring `composer` for the widget;
+    /// `set_composer` keeps the two in lockstep.
+    pub composer_draft: iced::widget::text_editor::Content,
+    /// Whether Shift is held right now: Enter sends, Shift+Enter breaks.
+    pub shift_down: bool,
+    /// The smart approval policy consulted before dialogs appear.
+    pub approval_policy: codex_gui_core::ApprovalPolicy,
+    /// Scheduled tasks driving future composer submissions.
+    pub scheduler: Scheduler,
+    /// Persisted knowledge base behind the knowledge panel.
+    pub knowledge: KnowledgeBase,
+    /// Installed cdylib-plugin registry behind the plugin market.
+    pub plugin_market: PluginMarket,
+    /// Managed external-agent sessions behind the Better Harness panel.
+    pub harness: HarnessBoard,
+    /// Scheduled-task panel visibility and form state.
+    pub scheduler_panel: SchedulerPanel,
+    /// Knowledge-panel visibility and form state.
+    pub knowledge_panel: KnowledgePanel,
+    /// Plugin-market panel visibility and feedback.
+    pub plugin_market_panel: PluginMarketPanel,
+    /// Better-Harness panel visibility and form state.
+    pub harness_panel: HarnessPanel,
     /// The composer's `@file` mention tracker: token query, hits, highlight.
     pub mentions: Mentions,
     /// Ids of reasoning cards the user collapsed; absent means expanded.
@@ -843,6 +967,14 @@ impl std::fmt::Debug for State {
             .field("expanded_mcp", &self.expanded_mcp.len())
             .field("mcp_servers", &self.mcp_servers.len())
             .field("mcp_login", &self.mcp_login)
+            .field("scheduler_tasks", &self.scheduler.tasks.len())
+            .field("knowledge_entries", &self.knowledge.entries.len())
+            .field("plugins", &self.plugin_market.plugins.len())
+            .field("harness_sessions", &self.harness.sessions.len())
+            .field("scheduler_panel", &self.scheduler_panel)
+            .field("knowledge_panel", &self.knowledge_panel)
+            .field("plugin_market_panel", &self.plugin_market_panel)
+            .field("harness_panel", &self.harness_panel)
             .field("status", &self.status)
             .field("connection_epoch", &self.connection_epoch)
             .finish()
@@ -919,6 +1051,17 @@ impl State {
             sidebar_filter: String::new(),
             expanded_command_groups: BTreeSet::new(),
             composer: String::new(),
+            composer_draft: iced::widget::text_editor::Content::new(),
+            shift_down: false,
+            approval_policy: codex_gui_core::ApprovalPolicy::load_or_default(),
+            scheduler: Scheduler::load_or_default(),
+            knowledge: KnowledgeBase::load_or_default(),
+            plugin_market: PluginMarket::load_or_default(),
+            harness: HarnessBoard::load_or_default(),
+            scheduler_panel: SchedulerPanel::default(),
+            knowledge_panel: KnowledgePanel::default(),
+            plugin_market_panel: PluginMarketPanel::default(),
+            harness_panel: HarnessPanel::default(),
             mentions: Mentions::default(),
             collapsed_reasoning: BTreeSet::new(),
             expanded_mcp: BTreeSet::new(),
@@ -933,6 +1076,13 @@ impl State {
     /// Whether the composer may submit a new turn: text, pending image
     /// attachments, or both - and no composer-side automation (prompt
     /// optimizer, dictation) holding the draft.
+    /// Replaces the composer text and mirrors it into the editor buffer
+    /// so the widget and the wire-side String stay in lockstep.
+    pub fn set_composer(&mut self, text: impl Into<String>) {
+        self.composer = text.into();
+        self.composer_draft = iced::widget::text_editor::Content::with_text(&self.composer);
+    }
+
     pub fn can_submit(&self) -> bool {
         self.client.is_some()
             && self.thread_id.is_some()

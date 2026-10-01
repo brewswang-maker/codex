@@ -8,19 +8,23 @@ use crate::command_palette;
 use crate::diff_view;
 use crate::editor_view;
 use crate::git_view;
+use crate::harness_view;
 use crate::icons::Icon;
 use crate::icons::IconKind;
+use crate::knowledge_view;
 use crate::menu_bar;
 use crate::message::AppMode;
 use crate::message::Message;
 use crate::model_menu;
 use crate::plan_view;
+use crate::plugin_market_view;
 use crate::quest_artifacts;
 use crate::quest_board;
 use crate::quest_launch;
 use crate::quest_overlays;
 use crate::quest_view;
 use crate::requests_view;
+use crate::scheduler_view;
 use crate::sessions_view;
 use crate::settings_view;
 use crate::skills_view;
@@ -40,7 +44,6 @@ use iced::widget::image;
 use iced::widget::row;
 use iced::widget::scrollable;
 use iced::widget::text;
-use iced::widget::text_input;
 use std::path::PathBuf;
 
 #[cfg(test)]
@@ -63,6 +66,20 @@ pub fn view(state: &State) -> Element<'_, Message> {
     if state.skills.page_open {
         // The Skills page likewise owns the whole surface while open.
         return skills_view::page(state);
+    }
+    // The four board panels are mutually exclusive full-screen
+    // surfaces (opening one closes the others in the update loop).
+    if state.scheduler_panel.open {
+        return scheduler_view::panel(state);
+    }
+    if state.knowledge_panel.open {
+        return knowledge_view::panel(state);
+    }
+    if state.plugin_market_panel.open {
+        return plugin_market_view::panel(state);
+    }
+    if state.harness_panel.open {
+        return harness_view::panel(state);
     }
 
     let main = conversation(state);
@@ -214,10 +231,15 @@ fn error_banner(banner: &ErrorBanner) -> Element<'_, Message> {
     } else {
         ""
     };
-    let label: Element<'_, Message> = text(format!("{}{retry_hint}", banner.message))
-        .size(theme::SIZE_SM)
-        .style(warn)
-        .into();
+    // One compact line: the strip stays a status hint, not a wall of
+    // text; the transcript carries the full error.
+    let label: Element<'_, Message> = text(format!(
+        "{}{retry_hint}",
+        crate::text_fit::ellipsize(&banner.message, 80)
+    ))
+    .size(theme::SIZE_SM)
+    .style(warn)
+    .into();
 
     container(
         row![
@@ -504,14 +526,21 @@ fn slash_picker(state: &State) -> Option<Element<'_, Message>> {
 fn composer(state: &State) -> Element<'_, Message> {
     let can_submit = state.can_submit();
 
-    let input = text_input("Ask Codex…（@ 提及文件，/ 命令）", &state.composer)
-        .id(COMPOSER_INPUT_ID)
-        .on_input(Message::ComposerChanged)
-        .on_submit_maybe(can_submit.then_some(Message::Submit))
-        .size(theme::SIZE_BODY)
-        .padding(4)
-        .style(theme::bare_input)
-        .width(Fill);
+    // Multi-line composer (Qoder-style): Enter sends, Shift+Enter breaks
+    // the line (handled in `ComposerAction`), paste keeps newlines, and
+    // the buffer grows with its content up to the card's cap where the
+    // editor scrolls internally.
+    let input = container(
+        iced::widget::text_editor(&state.composer_draft)
+            .id(iced::widget::Id::new(COMPOSER_INPUT_ID))
+            .placeholder("Ask Codex…（@ 提及文件，/ 命令）")
+            .on_action(Message::ComposerAction)
+            .size(theme::SIZE_BODY)
+            .padding(4)
+            .style(theme::bare_editor),
+    )
+    .width(Fill)
+    .max_height(240.0);
 
     let attach = button(
         row![

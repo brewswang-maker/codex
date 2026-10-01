@@ -1483,7 +1483,7 @@ pub(crate) fn request_voice_thread(state: &mut State) -> Task<Message> {
 }
 
 /// The actionable hint shown when the realtime session refuses to open;
-/// the domestic preset models (GLM/DeepSeek/Kimi/Qwen/Doubao) have no
+/// the domestic preset models (GLM/DeepSeek/Kimi/Qwen/Doubao/MiniMax) have no
 /// realtime channel, and nothing should pretend otherwise.
 pub(crate) const VOICE_UNSUPPORTED_HINT: &str =
     "当前模型不支持语音输入，请切换至支持实时语音的模型";
@@ -1884,6 +1884,7 @@ pub(crate) fn load_mcp_servers(state: &State) -> Task<Message> {
                     limit: None,
                     detail: Some(McpServerStatusDetail::ToolsAndAuthOnly),
                     thread_id,
+                    server_name: None,
                 },
             })
             .await

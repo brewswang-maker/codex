@@ -204,6 +204,11 @@ pub enum Message {
     Bootstrap(Bootstrap),
     /// The composer text changed.
     ComposerChanged(String),
+    /// A multi-line composer interaction; `Edit::Enter` without Shift
+    /// submits instead of breaking the line.
+    ComposerAction(iced::widget::text_editor::Action),
+    /// Global Shift press/release tracking for the Enter-vs-newline rule.
+    ShiftChanged(bool),
     /// The user submitted the composer.
     Submit,
     /// A submitted turn was accepted by the backend.
@@ -337,6 +342,8 @@ pub enum Message {
     },
     /// The user opened or closed the full-screen Skills page.
     SkillsPageToggled,
+    /// The Quest-rail shortcut: open the Skills page on its market tab.
+    SkillsMarketOpened,
     /// The user picked a half of the Skills page.
     SkillsTabPicked(SkillsTab),
     /// The user opened the add form.
@@ -730,4 +737,92 @@ pub enum Message {
     CompactionStarted(Result<Value, Error>),
     /// The user clicked one `/` command row; the payload is the command.
     SlashPicked(String),
+    /// The user opened or closed the scheduler panel.
+    SchedulerPanelToggled,
+    /// The scheduler new-task name draft changed.
+    SchedulerDraftNameChanged(String),
+    /// The scheduler new-task kind: `true` is one-shot, `false` recurring.
+    SchedulerDraftOncePicked(bool),
+    /// The one-shot delay draft changed (e.g. `30m`).
+    SchedulerDraftDelayChanged(String),
+    /// The recurring interval draft changed (e.g. `2h`).
+    SchedulerDraftIntervalChanged(String),
+    /// The scheduler new-task prompt draft changed.
+    SchedulerDraftPromptChanged(String),
+    /// The user submitted the scheduler new-task form.
+    SchedulerDraftSubmitted,
+    /// The user enabled or disabled one scheduled task.
+    SchedulerTaskToggled(String),
+    /// The user removed one scheduled task.
+    SchedulerTaskRemoved(String),
+    /// The user opened or closed the knowledge panel.
+    KnowledgePanelToggled,
+    /// The knowledge search query changed.
+    KnowledgeQueryChanged(String),
+    /// The knowledge draft title changed.
+    KnowledgeDraftTitleChanged(String),
+    /// The knowledge draft body changed.
+    KnowledgeDraftBodyChanged(String),
+    /// The knowledge draft tags (comma-separated) changed.
+    KnowledgeDraftTagsChanged(String),
+    /// The user started editing one entry; the payload is its id.
+    KnowledgeEditStarted(String),
+    /// The user submitted the knowledge draft (create or update).
+    KnowledgeDraftSubmitted,
+    /// The user dismissed the knowledge edit form.
+    KnowledgeEditCancelled,
+    /// The user removed one knowledge entry.
+    KnowledgeEntryRemoved(String),
+    /// The user quoted one entry into the composer; the payload is its id.
+    KnowledgeInjected(String),
+    /// The user opened or closed the plugin market panel.
+    PluginMarketPanelToggled,
+    /// The plugin market import draft changed (path or git URL).
+    PluginMarketSourceChanged(String),
+    /// The user asked to import the drafted plugin source.
+    PluginMarketImportSubmitted,
+    /// The user enabled or disabled one installed plugin.
+    PluginMarketToggled(String),
+    /// The user uninstalled one installed plugin.
+    PluginMarketUninstalled(String),
+    /// The user rolled one plugin back to its previous binary.
+    PluginMarketRolledBack(String),
+    /// The user opened or closed the Better Harness panel.
+    HarnessPanelToggled,
+    /// The user picked a harness session to inspect (`None` clears).
+    HarnessSelected(Option<String>),
+    /// The harness new-session name draft changed.
+    HarnessDraftNameChanged(String),
+    /// The harness new-session command draft changed.
+    HarnessDraftCommandChanged(String),
+    /// The harness new-session working directory draft changed.
+    HarnessDraftCwdChanged(String),
+    /// The user added the drafted harness session.
+    HarnessSessionAdded,
+    /// The user removed one harness session.
+    HarnessSessionRemoved(String),
+    /// The user started one harness session's external agent.
+    HarnessSessionStarted(String),
+    /// The user stopped one harness session's external agent.
+    HarnessSessionStopped(String),
+    /// The user advanced one session to the next loop stage.
+    HarnessStageAdvanced(String),
+    /// The harness review verdict draft changed.
+    HarnessReviewVerdictChanged(String),
+    /// The harness review findings draft changed.
+    HarnessReviewFindingsChanged(String),
+    /// The user recorded the review verdict for one session.
+    HarnessReviewRecorded(String),
+    /// The user derived the repair checklist from the review.
+    HarnessRepairPlanned(String),
+    /// The user flipped one repair checkbox.
+    HarnessRepairToggled {
+        /// The session whose checklist changed.
+        id: String,
+        /// The step position.
+        index: usize,
+    },
+    /// Esc was pressed while a board panel is up; the update loop
+    /// closes whichever one is open (the listener itself is stateless).
+    BoardsEscapePressed,
 }

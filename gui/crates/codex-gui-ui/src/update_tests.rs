@@ -2749,6 +2749,30 @@ fn skills_page_toggles_and_yields_to_settings() {
 }
 
 #[test]
+fn skills_market_opens_on_market_tab() {
+    let mut state = State::new(Flags::default_app_server());
+
+    // The Quest-rail shortcut opens the page straight on the market
+    // tab and takes the surface away from every board panel.
+    state.scheduler_panel.open = true;
+    state.knowledge_panel.open = true;
+    state.plugin_market_panel.open = true;
+    state.harness_panel.open = true;
+    let _ = update(&mut state, Message::SkillsMarketOpened);
+    assert!(state.skills.page_open);
+    assert_eq!(state.skills.tab, SkillsTab::Market);
+    assert!(!state.scheduler_panel.open, "the scheduler panel yields");
+    assert!(!state.knowledge_panel.open, "the knowledge panel yields");
+    assert!(!state.plugin_market_panel.open, "the plugin market yields");
+    assert!(!state.harness_panel.open, "the harness panel yields");
+
+    // Toggled again with the page up: it closes (the footer entry is
+    // hidden underneath, so this only guards the toggle semantics).
+    let _ = update(&mut state, Message::SkillsMarketOpened);
+    assert!(!state.skills.page_open);
+}
+
+#[test]
 fn skills_tab_pick_switches_the_tab() {
     let mut state = State::new(Flags::default_app_server());
     assert_eq!(state.skills.tab, SkillsTab::Manage);
@@ -3769,6 +3793,7 @@ fn mcp_login_banner_tracks_the_completion_notification() {
             name: "filesystem".to_string(),
             result: Ok(McpServerOauthLoginResponse {
                 authorization_url: "https://mcp.example/auth".to_string(),
+                login_id: None,
             }),
         },
     );
@@ -3802,6 +3827,7 @@ fn mcp_login_banner_tracks_the_completion_notification() {
             name: "other".to_string(),
             result: Ok(McpServerOauthLoginResponse {
                 authorization_url: "https://mcp.example/other".to_string(),
+                login_id: None,
             }),
         },
     );

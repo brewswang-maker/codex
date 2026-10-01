@@ -4,6 +4,7 @@ members = [
     "crates/codex-gui-bridge",
     "crates/codex-gui-core",
     "crates/codex-gui-ui",
+    "crates/codex-plugin-sdk",
 ]
 resolver = "2"
 
@@ -26,6 +27,7 @@ panic = "warn"
 codex-gui-bridge = { path = "crates/codex-gui-bridge" }
 codex-gui-core = { path = "crates/codex-gui-core" }
 codex-gui-ui = { path = "crates/codex-gui-ui" }
+codex-plugin-sdk = { path = "crates/codex-plugin-sdk" }
 
 # Vendored upstream: tagged release 0.14.0 (branch poc-0.14.0 in ../iced).
 # Features mirror ../iced/Cargo.toml#L24-L91; `tokio` replaces the default
@@ -76,6 +78,7 @@ base64 = "0.22.1"
 
 anyhow = "1"
 futures = "0.3"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = [

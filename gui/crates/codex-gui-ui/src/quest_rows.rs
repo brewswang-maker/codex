@@ -48,7 +48,10 @@ pub fn quest_row<'a>(
 /// The row itself: click resumes the quest, "⋯" opens its menu.
 fn row_button<'a>(state: &'a State, thread: &'a ThreadSummary, now: i64) -> Element<'a, Message> {
     let active = state.thread_id.as_deref() == Some(thread.id.as_str());
-    let label = text(String::from(thread.label()))
+    // One line only: the label is pre-truncated with an ellipsis on a
+    // display-width budget sized for the 270px sidebar (minus dot, badge,
+    // age, and menu button) so long quest titles never wrap.
+    let label = text(crate::text_fit::ellipsize(&thread.label(), 20))
         .size(theme::SIZE_MD)
         .style(theme::fg)
         .font(bold_if(active));

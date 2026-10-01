@@ -24,6 +24,7 @@ use crate::state::Status;
 use crate::state::TextSelection;
 use crate::state::VoiceInputStatus;
 use crate::status_notifications;
+use crate::update_boards;
 use codex_app_server_protocol::McpServerElicitationAction;
 use codex_app_server_protocol::McpServerElicitationRequest;
 use codex_app_server_protocol::ServerNotification;
@@ -32,6 +33,7 @@ use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnStatus;
 use codex_gui_bridge::GuiEvent;
 use codex_gui_core::Billing;
+use codex_gui_core::Decision;
 use codex_gui_core::Entry;
 use codex_gui_core::MarkdownStream;
 use codex_gui_core::QuestStatus;
@@ -69,6 +71,27 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
     match message {
         Message::Event(event) => on_event(state, event),
         Message::Bootstrap(step) => on_bootstrap(state, step),
+        Message::ComposerAction(action) => {
+            // Enter sends when Shift is up; Shift+Enter inserts the
+            // newline the editor asked for.
+            if matches!(
+                action,
+                iced::widget::text_editor::Action::Edit(iced::widget::text_editor::Edit::Enter)
+            ) && !state.shift_down
+            {
+                return if state.can_submit() {
+                    dispatch(state, Message::Submit)
+                } else {
+                    Task::none()
+                };
+            }
+            state.composer_draft.perform(action);
+            dispatch(state, Message::ComposerChanged(state.composer_draft.text()))
+        }
+        Message::ShiftChanged(down) => {
+            state.shift_down = down;
+            Task::none()
+        }
         Message::ComposerChanged(text) => {
             state.composer = text;
             // Typing over an optimized rewrite retires the undo entry:
@@ -99,7 +122,7 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             Err(error) => {
                 // The turn never started; hand the text and attachments back
                 // and surface why.
-                state.composer = prompt;
+                state.set_composer(prompt);
                 state.attachments.images = images;
                 state.status = Status::Ready;
                 state
@@ -145,7 +168,18 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             tracing::info!(%uri, "link click ignored; external opener lands later");
             Task::none()
         }
-        Message::Tick => flush_stream(state),
+        Message::Tick => {
+            let mut flow = flush_stream(state);
+            // Due scheduled tasks submit themselves through the normal
+            // composer path, one after another.
+            for task in update_boards::tick_boards(state) {
+                state.set_composer(task.prompt);
+                if state.can_submit() {
+                    flow = flow.chain(dispatch(state, Message::Submit));
+                }
+            }
+            flow
+        }
         Message::ApprovalDecided {
             request_id,
             decision,
@@ -600,6 +634,28 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
                 commands::load_market(state)
             } else {
                 Task::none()
+            };
+            Task::batch([commands::reload_skills(state), market])
+        }
+        Message::SkillsMarketOpened => {
+            let opened = state.skills.toggle_page();
+            if !opened {
+                return Task::none();
+            }
+            state.skills.tab = SkillsTab::Market;
+            // One full-screen surface at a time: the settings panel and
+            // the board panels yield to the Skills page.
+            if state.settings.open {
+                state.settings.toggle();
+            }
+            state.scheduler_panel.open = false;
+            state.knowledge_panel.open = false;
+            state.plugin_market_panel.open = false;
+            state.harness_panel.open = false;
+            let market = if state.skills.market.loaded {
+                Task::none()
+            } else {
+                commands::load_market(state)
             };
             Task::batch([commands::reload_skills(state), market])
         }
@@ -1164,7 +1220,7 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::PlanQuoted => {
             if let Some(plan) = state.transcript.plan() {
-                state.composer = plan_text(plan);
+                state.set_composer(plan_text(plan));
             }
             state.plan_overlay_open = false;
             Task::none()
@@ -1234,7 +1290,7 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
         Message::PromptOptimizeUndo => {
             // Roll the composer back to the draft the rewrite replaced.
             if let Some(original) = state.prompt_optimize.original.take() {
-                state.composer = original;
+                state.set_composer(original);
                 state.prompt_optimize.status = PromptOptimizeStatus::Idle;
             }
             Task::none()
@@ -1390,7 +1446,7 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             // Seed the composer once so the first turn carries the intent;
             // existing drafts stay untouched.
             if state.composer.is_empty() {
-                state.composer = String::from(scenario.template());
+                state.set_composer(String::from(scenario.template()));
             }
             commands::restart_thread(state)
         }
@@ -1538,7 +1594,7 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::ComposerCleared => {
-            state.composer.clear();
+            state.set_composer(String::new());
             state.mentions.close();
             Task::none()
         }
@@ -1577,8 +1633,67 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::SlashPicked(command) => {
-            state.composer = command;
+            state.set_composer(command);
             Task::batch([submit_composer(state), refocus_composer()])
+        }
+        Message::BoardsEscapePressed => {
+            // The Esc listener is stateless; close whichever board
+            // panel is up (at most one is open at a time).
+            if state.scheduler_panel.open {
+                state.scheduler_panel.open = false;
+            } else if state.knowledge_panel.open {
+                state.knowledge_panel.open = false;
+            } else if state.plugin_market_panel.open {
+                state.plugin_market_panel.open = false;
+            } else if state.harness_panel.open {
+                state.harness_panel.open = false;
+            }
+            Task::none()
+        }
+        Message::SchedulerPanelToggled
+        | Message::SchedulerDraftNameChanged(_)
+        | Message::SchedulerDraftOncePicked(_)
+        | Message::SchedulerDraftDelayChanged(_)
+        | Message::SchedulerDraftIntervalChanged(_)
+        | Message::SchedulerDraftPromptChanged(_)
+        | Message::SchedulerDraftSubmitted
+        | Message::SchedulerTaskToggled(_)
+        | Message::SchedulerTaskRemoved(_)
+        | Message::KnowledgePanelToggled
+        | Message::KnowledgeQueryChanged(_)
+        | Message::KnowledgeDraftTitleChanged(_)
+        | Message::KnowledgeDraftBodyChanged(_)
+        | Message::KnowledgeDraftTagsChanged(_)
+        | Message::KnowledgeEditStarted(_)
+        | Message::KnowledgeDraftSubmitted
+        | Message::KnowledgeEditCancelled
+        | Message::KnowledgeEntryRemoved(_)
+        | Message::KnowledgeInjected(_)
+        | Message::PluginMarketPanelToggled
+        | Message::PluginMarketSourceChanged(_)
+        | Message::PluginMarketImportSubmitted
+        | Message::PluginMarketToggled(_)
+        | Message::PluginMarketUninstalled(_)
+        | Message::PluginMarketRolledBack(_)
+        | Message::HarnessPanelToggled
+        | Message::HarnessSelected(_)
+        | Message::HarnessDraftNameChanged(_)
+        | Message::HarnessDraftCommandChanged(_)
+        | Message::HarnessDraftCwdChanged(_)
+        | Message::HarnessSessionAdded
+        | Message::HarnessSessionRemoved(_)
+        | Message::HarnessSessionStarted(_)
+        | Message::HarnessSessionStopped(_)
+        | Message::HarnessStageAdvanced(_)
+        | Message::HarnessReviewVerdictChanged(_)
+        | Message::HarnessReviewFindingsChanged(_)
+        | Message::HarnessReviewRecorded(_)
+        | Message::HarnessRepairPlanned(_)
+        | Message::HarnessRepairToggled { .. } => {
+            let Some(boards) = update_boards::BoardsMessage::project(message) else {
+                return Task::none();
+            };
+            update_boards::boards_message(state, boards)
         }
         Message::GitRefreshRequested => state
             .status_board
@@ -1734,7 +1849,7 @@ fn submit_composer(state: &mut State) -> Task<Message> {
         if !state.can_submit() {
             return Task::none();
         }
-        state.composer.clear();
+        state.set_composer(String::new());
         return match action {
             commands::SlashAction::Review => commands::start_review(state),
             commands::SlashAction::Compact => commands::compact_thread(state),
@@ -1987,7 +2102,7 @@ fn on_event(state: &mut State, event: GuiEvent) -> Task<Message> {
                 if let ServerNotification::ItemCompleted(completed) = &notification
                     && let ThreadItem::AgentMessage { text, .. } = &completed.item
                 {
-                    state.composer = text.clone();
+                    state.set_composer(text.clone());
                     state.prompt_optimize.thread = None;
                     state.prompt_optimize.status = PromptOptimizeStatus::Idle;
                     return commands::archive_thread(state, optimize_thread);
@@ -2104,6 +2219,28 @@ fn on_event(state: &mut State, event: GuiEvent) -> Task<Message> {
             // user decides. A request with no dialog kind gets a
             // method-not-found reply so it never dangles until timeout.
             if let Some(pending) = state.approvals.offered(&request) {
+                // The smart policy may resolve the request before a
+                // dialog: `rm -rf` variants decline sight-unseen, plain
+                // patches and single-confirm commands accept, and
+                // permission grants always stay manual.
+                if let Some(auto) = state.approval_policy.classify(&pending.kind) {
+                    let decision = match auto {
+                        codex_gui_core::AutoDecision::Accept => Decision::Accept,
+                        codex_gui_core::AutoDecision::Decline => Decision::Decline,
+                    };
+                    tracing::info!(
+                        request = %pending.request_id,
+                        ?auto,
+                        "approval auto-resolved by policy"
+                    );
+                    return dispatch(
+                        state,
+                        Message::ApprovalDecided {
+                            request_id: pending.request_id.to_string(),
+                            decision,
+                        },
+                    );
+                }
                 tracing::info!(request = %pending.request_id, "approval requested");
                 Task::none()
             } else if let Some(pending) = state.questions.offered(&request) {

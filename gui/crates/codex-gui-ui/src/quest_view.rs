@@ -98,17 +98,8 @@ pub fn quest_header(state: &State) -> Element<'_, Message> {
             .style(chip_surface),
         );
     }
-    if let Some(cwd) = state.status_board.cwd() {
-        let name = std::path::Path::new(cwd).file_name().map_or_else(
-            || String::from(cwd),
-            |name| name.to_string_lossy().into_owned(),
-        );
-        header = header.push(
-            container(text(name).size(theme::SIZE_XS).style(theme::dim))
-                .padding([2, 8])
-                .style(chip_surface),
-        );
-    }
+    // The working directory lives in the status bar; the header keeps
+    // only the title, the live-state chip, and the scenario context.
 
     header = header.push(Space::new().width(Fill));
     // The artifact entry only shows once the quest has produced content.
@@ -299,10 +290,36 @@ fn section_label(label: &'static str) -> Element<'static, Message> {
 /// The rail footer: utility entries over the account block.
 fn footer(state: &State) -> Element<'_, Message> {
     let utilities = column![
-        utility_row(IconKind::Clock, "定时任务", None),
-        utility_row(IconKind::Gear, "Better Harness", Some("Beta")),
-        utility_row(IconKind::Wiki, "知识中心", None),
-        utility_row(IconKind::Extensions, "插件市场", None),
+        utility_row(
+            IconKind::Clock,
+            "定时任务",
+            None,
+            Message::SchedulerPanelToggled,
+        ),
+        utility_row(
+            IconKind::Gear,
+            "Better Harness",
+            Some("Beta"),
+            Message::HarnessPanelToggled,
+        ),
+        utility_row(
+            IconKind::Wiki,
+            "知识中心",
+            None,
+            Message::KnowledgePanelToggled,
+        ),
+        utility_row(
+            IconKind::Extensions,
+            "插件市场",
+            None,
+            Message::PluginMarketPanelToggled,
+        ),
+        utility_row(
+            IconKind::Sparkle,
+            "技能市场",
+            None,
+            Message::SkillsMarketOpened,
+        ),
     ]
     .spacing(2);
 
@@ -311,11 +328,12 @@ fn footer(state: &State) -> Element<'_, Message> {
         .into()
 }
 
-/// One footer utility entry; inert until the corresponding surface lands.
+/// One footer utility entry raising its full-screen panel.
 fn utility_row(
     icon: IconKind,
     label: &'static str,
     tag: Option<&'static str>,
+    action: Message,
 ) -> Element<'static, Message> {
     let mut content = row![
         Icon::new(icon, theme::MUTED, 15.0).widget(),
@@ -334,7 +352,7 @@ fn utility_row(
         .width(Fill)
         .padding([4, 2])
         .style(theme::ghost_button)
-        .on_press(Message::Noop)
+        .on_press(action)
         .into()
 }
 

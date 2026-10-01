@@ -198,3 +198,100 @@ fn permissions_payload_grants_verbatim_or_denies_empty() {
         })
     );
 }
+
+mod policy {
+    use super::ApprovalKind;
+    use super::Approvals;
+    use super::Decision;
+    use crate::approvals::ApprovalPolicy;
+    use crate::approvals::AutoDecision;
+    use crate::approvals::is_destructive_rm;
+    use codex_app_server_protocol::RequestId;
+
+    #[test]
+    fn destructive_rm_variants_are_detected() {
+        for command in [
+            "rm -rf /",
+            "rm -rf /tmp/x",
+            "rm -fr /*",
+            "sudo rm -rf /home",
+            "/bin/rm -rf /",
+            "/usr/bin/rm -fr ./build",
+            "rm -r -f ./target",
+            "rm -rnf ./x",
+            "rm --recursive --force ./x",
+            "sh -c \"rm -rf /tmp/y\"",
+            "bash -lc 'sudo rm -rf /*'",
+            // The policy matches anywhere in the line on purpose (fail
+            // safe): an echo/grep argument mentioning `rm -rf` is declined
+            // rather than risk a missed destructive command.
+            "echo rm -rf",
+            "grep 'rm -rf' audit.log",
+        ] {
+            assert!(is_destructive_rm(command), "missed: {command}");
+        }
+        for command in [
+            "rm file.txt",
+            "rm -f file.txt",
+            "remove -rf x",
+            "ls -rf",
+            "cargo rm --force x",
+        ] {
+            assert!(!is_destructive_rm(command), "false positive: {command}");
+        }
+    }
+
+    #[test]
+    fn policy_auto_accepts_patches_and_plain_commands_auto_declines_rm_rf() {
+        let policy = ApprovalPolicy::default();
+
+        let patch = ApprovalKind::FileChange { reason: None };
+        assert_eq!(policy.classify(&patch), Some(AutoDecision::Accept));
+
+        let plain = ApprovalKind::CommandExecution {
+            command: Some(String::from("cargo build --release")),
+            reason: None,
+        };
+        assert_eq!(policy.classify(&plain), Some(AutoDecision::Accept));
+
+        let destructive = ApprovalKind::CommandExecution {
+            command: Some(String::from("sudo rm -rf /tmp/x")),
+            reason: None,
+        };
+        assert_eq!(policy.classify(&destructive), Some(AutoDecision::Decline));
+
+        // Permissions always stay manual: only the user may widen the
+        // session's trust scope.
+        let permissions = ApprovalKind::Permissions {
+            reason: None,
+            requested: Default::default(),
+        };
+        assert_eq!(policy.classify(&permissions), None);
+    }
+
+    #[test]
+    fn policy_tiers_can_be_disabled_via_json() {
+        let policy: ApprovalPolicy = serde_json::from_str(
+            r#"{"auto_accept_file_changes": false, "auto_accept_plain_commands": false}"#,
+        )
+        .expect("policy parses");
+        assert!(!policy.auto_accept_file_changes);
+        assert!(policy.deny_destructive_commands);
+
+        let patch = ApprovalKind::FileChange { reason: None };
+        assert_eq!(policy.classify(&patch), None);
+    }
+
+    #[test]
+    fn auto_decline_answers_the_wire_like_a_manual_deny() {
+        let approval = super::PendingApproval {
+            request_id: RequestId::Integer(1),
+            kind: ApprovalKind::CommandExecution {
+                command: Some(String::from("rm -rf /")),
+                reason: None,
+            },
+        };
+        let payload = Approvals::response_payload(&approval, Decision::Decline);
+        assert_eq!(payload["decision"], "decline");
+    }
+}

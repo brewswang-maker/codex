@@ -20,6 +20,7 @@ use iced::widget::container;
 use iced::widget::mouse_area;
 use iced::widget::opaque;
 use iced::widget::row;
+use iced::widget::scrollable;
 use iced::widget::stack;
 use iced::widget::text;
 
@@ -65,27 +66,33 @@ fn dialog(approval: &PendingApproval) -> Element<'_, Message> {
         ApprovalKind::Permissions { .. } => "Grant permissions?",
     };
 
-    let mut body = column![text(headline).size(theme::SIZE_BODY).style(theme::fg)]
-        .spacing(10)
-        .padding(16);
-
-    body = match &approval.kind {
+    // Details live in their own capped scroll area so a long command or
+    // patch can never push the decision buttons off-screen; short content
+    // shrinks the card instead of reserving the full cap.
+    let mut details = column![];
+    match &approval.kind {
         ApprovalKind::CommandExecution { command, reason } => {
-            body = body.push(detail(command.as_deref().unwrap_or("(stdin)")));
+            details = details.push(detail(command.as_deref().unwrap_or("(stdin)")));
             if let Some(reason) = reason {
-                body = body.push(detail(reason));
+                details = details.push(detail(reason));
             }
-            body
         }
         ApprovalKind::FileChange { reason } | ApprovalKind::Permissions { reason, .. } => {
             if let Some(reason) = reason {
-                body = body.push(detail(reason));
+                details = details.push(detail(reason));
             }
-            body
         }
-    };
+    }
 
-    body = body.push(actions(&request_id, &approval.kind));
+    let body = column![
+        text(headline).size(theme::SIZE_BODY).style(theme::fg),
+        container(scrollable(details).width(Fill))
+            .width(Fill)
+            .max_height(320),
+        actions(&request_id, &approval.kind),
+    ]
+    .spacing(10)
+    .padding(16);
 
     container(body)
         .width(Fill)

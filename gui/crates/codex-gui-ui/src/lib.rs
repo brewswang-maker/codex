@@ -6,17 +6,21 @@
 mod activity_bar;
 mod approvals_view;
 mod attachments;
+mod boards_shell;
 mod chat;
 mod command_palette;
 mod commands;
 mod diff_view;
 mod editor_view;
 mod git_view;
+mod harness_view;
 mod icons;
+mod knowledge_view;
 mod menu_bar;
 mod message;
 mod model_menu;
 mod plan_view;
+mod plugin_market_view;
 mod quest_artifacts;
 mod quest_board;
 mod quest_launch;
@@ -25,6 +29,7 @@ mod quest_rows;
 mod quest_view;
 mod remote_view;
 mod requests_view;
+mod scheduler_view;
 mod scm_view;
 mod selectable;
 mod sessions_view;
@@ -32,8 +37,10 @@ mod settings_view;
 mod skills_view;
 mod state;
 mod status_notifications;
+mod text_fit;
 mod theme;
 mod update;
+mod update_boards;
 mod view;
 mod welcome_view;
 
@@ -83,6 +90,20 @@ pub fn subscription(state: &State) -> Subscription<Message> {
     let tick = state.stream.is_active().then(|| {
         iced::time::every(std::time::Duration::from_millis(RENDER_TICK_MS))
             .map(|_instant| Message::Tick)
+    });
+
+    // Shift is tracked globally so the composer can tell Enter (send)
+    // from Shift+Enter (newline) inside its editor actions.
+    let shift_tracker = iced::event::listen_with(|event, _status, _window| match event {
+        Event::Keyboard(iced::keyboard::Event::KeyPressed {
+            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Shift),
+            ..
+        }) => Some(Message::ShiftChanged(true)),
+        Event::Keyboard(iced::keyboard::Event::KeyReleased {
+            key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Shift),
+            ..
+        }) => Some(Message::ShiftChanged(false)),
+        _ => None,
     });
 
     // Ctrl+Shift+P raises the palette from anywhere; while it is up the
@@ -370,10 +391,39 @@ pub fn subscription(state: &State) -> Subscription<Message> {
             .map(|_instant| Message::VoiceInputPulse)
     });
 
+    // The boards' per-second heartbeat: due scheduled tasks become
+    // composer submissions and finished harness children are reaped,
+    // even when no stream is being flushed (the 50 ms tick is off).
+    let boards_tick =
+        iced::time::every(std::time::Duration::from_secs(1)).map(|_instant| Message::Tick);
+
+    // Esc closes a full-screen board panel (scheduler, knowledge,
+    // plugin market, Better Harness). The listener is stateless (it
+    // must be a fn pointer); the update loop decides which open panel
+    // to close on BoardsEscapePressed.
+    let boards_page_open = state.scheduler_panel.open
+        || state.knowledge_panel.open
+        || state.plugin_market_panel.open
+        || state.harness_panel.open;
+    let boards_page_keys = boards_page_open.then(|| {
+        iced::event::listen_with(|event, _status, _window| {
+            matches!(
+                event,
+                Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                    key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape),
+                    ..
+                })
+            )
+            .then_some(Message::BoardsEscapePressed)
+        })
+    });
+
     Subscription::batch([
         connection,
         drops,
         tick.unwrap_or_else(Subscription::none),
+        boards_tick,
+        shift_tracker,
         new_quest_keys,
         settings_keys.unwrap_or_else(Subscription::none),
         rail_keys.unwrap_or_else(Subscription::none),
@@ -388,6 +438,7 @@ pub fn subscription(state: &State) -> Subscription<Message> {
         menu_keys.unwrap_or_else(Subscription::none),
         model_menu_keys.unwrap_or_else(Subscription::none),
         skills_page_keys.unwrap_or_else(Subscription::none),
+        boards_page_keys.unwrap_or_else(Subscription::none),
         mention_keys.unwrap_or_else(Subscription::none),
         selection_keys.unwrap_or_else(Subscription::none),
         voice_input_keys.unwrap_or_else(Subscription::none),

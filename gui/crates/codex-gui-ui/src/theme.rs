@@ -189,6 +189,21 @@ pub fn rail_button(
 }
 
 /// The frameless composer input inside the white rounded card.
+/// The text-editor twin of [`bare_input`]: transparent surface, no
+/// border, so the multi-line composer sits flush in its card.
+pub fn bare_editor(
+    _theme: &Theme,
+    _status: iced::widget::text_editor::Status,
+) -> iced::widget::text_editor::Style {
+    iced::widget::text_editor::Style {
+        background: Color::TRANSPARENT.into(),
+        border: iced::Border::default(),
+        placeholder: FAINT,
+        value: TEXT,
+        selection: SELECTION,
+    }
+}
+
 pub fn bare_input(
     _theme: &Theme,
     _status: iced::widget::text_input::Status,

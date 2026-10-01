@@ -115,12 +115,15 @@ pub struct VendorPreset {
 /// the Kimi Code docs; GLM: `docs.bigmodel.cn` coding-plan Codex guide;
 /// Qwen: Aliyun Model Studio Responses compatibility guide; Doubao:
 /// Volcengine Ark Responses docs; DeepSeek: the `api-docs.deepseek.com`
-/// Responses guide). Suggested models track each vendor's current catalog
-/// (the GLM-5.3 tier per the `docs.bigmodel.cn` model overview; DeepSeek
+/// Responses guide; MiniMax: the `platform.minimaxi.com` Responses API
+/// reference, whose OpenAPI server is `api.minimax.cn`). Suggested models
+/// track each vendor's current catalog (the GLM-5.3 tier per the
+/// `docs.bigmodel.cn` model overview; DeepSeek
 /// `deepseek-flash`/`deepseek-v4-pro` per its Codex integration guide;
-/// Doubao's recommended Ark snapshot). Plan types without an official
-/// Responses endpoint — Qwen's Token and Coding plans are
-/// Chat/Completions-only — are not listed.
+/// Doubao's recommended Ark snapshot; MiniMax `MiniMax-M3` per its model
+/// catalog, with `MiniMax-M3.1-Flash-Preview` as the M Plan / MiniMax Code
+/// subscription pick). Plan types without an official Responses endpoint —
+/// Qwen's Token and Coding plans are Chat/Completions-only — are not listed.
 pub const PROVIDER_PRESETS: &[VendorPreset] = &[
     VendorPreset {
         id: "",
@@ -224,6 +227,26 @@ pub const PROVIDER_PRESETS: &[VendorPreset] = &[
             base_url: "https://ark.cn-beijing.volces.com/api/v3",
             model: "doubao-seed-2-1-pro-260915",
         }],
+    },
+    VendorPreset {
+        id: "minimax",
+        name: "MiniMax",
+        entries: &[
+            // The pay-as-you-go flagship per the official model catalog.
+            PlanEntry {
+                billing: Billing::PayAsYouGo,
+                base_url: "https://api.minimax.cn/v1",
+                model: "MiniMax-M3",
+            },
+            // M3.1-Flash-Preview ships only through the M Plan / MiniMax
+            // Code subscription; the official Responses API reference uses
+            // it as its example model on this same endpoint.
+            PlanEntry {
+                billing: Billing::CodingPlan,
+                base_url: "https://api.minimax.cn/v1",
+                model: "MiniMax-M3.1-Flash-Preview",
+            },
+        ],
     },
 ];
 
