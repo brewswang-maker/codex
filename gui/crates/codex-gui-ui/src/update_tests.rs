@@ -1444,11 +1444,15 @@ fn picking_a_skill_appends_the_mention_and_closes_the_picker() {
         plugin_id: None,
     }];
     state.skills.picker_open = true;
-    state.composer = "review ".to_string();
+    state.set_composer("review ");
 
     let _ = update(&mut state, Message::SkillPicked("mock-skill".to_string()));
 
+    // The editor box renders `composer_draft`: the mention only shows
+    // up in the input when the draft buffer is updated alongside the
+    // string.
     assert_eq!(state.composer, "review $mock-skill ");
+    assert_eq!(state.composer_draft.text(), "review $mock-skill ");
     assert!(!state.skills.picker_open);
 }
 

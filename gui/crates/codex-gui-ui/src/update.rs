@@ -599,7 +599,12 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::SkillPicked(name) => {
             if let Some(mention) = state.skills.mention(&name) {
-                state.composer.push_str(&mention);
+                // The editor widget renders `composer_draft`, not
+                // `composer`: route the append through `set_composer`
+                // so the mention actually shows up in the input.
+                let mut merged = state.composer.clone();
+                merged.push_str(&mention);
+                state.set_composer(merged);
             }
             state.skills.picker_open = false;
             refocus_composer()
