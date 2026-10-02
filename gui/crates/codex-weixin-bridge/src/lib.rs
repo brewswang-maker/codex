@@ -4,5 +4,6 @@
 //! 守护进程编排。
 
 pub mod cli;
+pub mod codex;
 pub mod error;
 pub mod wechat;

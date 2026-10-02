@@ -36,7 +36,9 @@ pub struct AccountData {
     pub saved_at_ms: i64,
 }
 
-/// Filesystem layout under `~/.codex/weixin-bridge/`.
+/// Filesystem layout under `~/.codex/weixin-bridge/`. Cloned into the
+/// long-poll task so cursor saves can happen off the main loop.
+#[derive(Clone)]
 pub struct Store {
     root: PathBuf,
 }
@@ -62,6 +64,12 @@ impl Store {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// The codex home this store lives under (`~/.codex`); session state
+    /// (contact-thread mapping) roots here.
+    pub fn codex_home(&self) -> &Path {
+        self.root.parent().unwrap_or(&self.root)
     }
 
     fn credentials_dir(&self) -> PathBuf {

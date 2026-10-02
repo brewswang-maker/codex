@@ -1881,6 +1881,8 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "clap",
+ "codex-app-server-protocol",
+ "codex-gui-bridge",
  "home",
  "pretty_assertions",
  "qrcode",

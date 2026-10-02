@@ -37,7 +37,9 @@ fn random_wechat_uin() -> String {
 }
 
 /// Typed HTTP client bound to one bot account (token optional pre-login).
-#[derive(Debug)]
+/// Cheap to clone (the inner `reqwest::Client` is an `Arc`); one clone lives
+/// in the long-poll task.
+#[derive(Debug, Clone)]
 pub struct WeixinClient {
     http: reqwest::Client,
     base_url: String,

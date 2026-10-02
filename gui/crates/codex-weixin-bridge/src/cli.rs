@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 
 use crate::error::Result;
 use crate::wechat::auth::{
-    AccountData, LoginEvent, LoginOutcome, Store, render_qr_to_terminal, run_login,
+    render_qr_to_terminal, run_login, AccountData, LoginEvent, LoginOutcome, Store,
 };
 use crate::wechat::client::WeixinClient;
 use crate::wechat::types::DEFAULT_BASE_URL;
@@ -39,7 +39,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Login => cmd_login().await,
         Command::Status => cmd_status(),
-        Command::Run => cmd_run(),
+        Command::Run => cmd_run().await,
     }
 }
 
@@ -113,12 +113,12 @@ fn cmd_status() -> Result<()> {
     Ok(())
 }
 
-fn cmd_run() -> Result<()> {
-    // 会话桥在 D2 提供（codex/session.rs + runtime.rs）；当前版本先拒绝启动，
-    // 避免静默空跑。
-    Err(crate::error::BridgeError::Other(
-        "run 子命令将在 D2（会话桥）落地后可用；当前版本支持 login / status。".to_string(),
-    ))
+async fn cmd_run() -> Result<()> {
+    let store = Store::with_default_home()?;
+    if store.load_account().is_none() {
+        return Err(crate::error::BridgeError::NotLoggedIn);
+    }
+    crate::codex::runtime::run(store).await
 }
 
 async fn read_verify_code_from_stdin() -> String {

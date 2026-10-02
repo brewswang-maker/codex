@@ -35,6 +35,9 @@ pub enum BridgeError {
     #[error("登录失败: {0}")]
     Login(String),
 
+    #[error("codex app-server 错误: {0}")]
+    AppServer(#[from] codex_gui_bridge::Error),
+
     #[error("{0}")]
     Other(String),
 }

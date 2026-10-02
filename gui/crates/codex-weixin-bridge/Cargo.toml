@@ -8,6 +8,9 @@ publish.workspace = true
 [dependencies]
 base64.workspace = true
 clap.workspace = true
+# 会话桥复用 GUI 的 app-server stdio 抽象与协议类型（D2）。
+codex-app-server-protocol.workspace = true
+codex-gui-bridge.workspace = true
 home.workspace = true
 qrcode.workspace = true
 rand.workspace = true
