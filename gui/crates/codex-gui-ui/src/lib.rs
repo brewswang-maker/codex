@@ -16,6 +16,7 @@ mod git_view;
 mod harness_view;
 mod icons;
 mod knowledge_view;
+mod marketplace_rescue;
 mod menu_bar;
 mod message;
 mod model_menu;

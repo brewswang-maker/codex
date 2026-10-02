@@ -7,6 +7,7 @@
 use crate::chat;
 use crate::commands;
 use crate::commands::VOICE_UNSUPPORTED_HINT;
+use crate::marketplace_rescue;
 use crate::message::AppMode;
 use crate::message::Bootstrap;
 use crate::message::Message;
@@ -921,7 +922,29 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
                 commands::load_market(state)
             }
             Err(error) => {
-                state.skills.notice = Some(SkillNotice::failed(format!("添加市场失败：{error}")));
+                let text = error.to_string();
+                if marketplace_rescue::is_manifest_missing_error(&text) {
+                    // The add hit a repository that ships skills but no
+                    // marketplace manifest; turn it into a local
+                    // marketplace and retry instead of dead-ending.
+                    match marketplace_rescue::rescue(&text) {
+                        Ok(local_source) => {
+                            state.skills.notice = Some(SkillNotice::ok(
+                                "该仓库没有市场清单，已按技能仓库自动生成清单，正在重新添加…"
+                                    .to_string(),
+                            ));
+                            return commands::add_marketplace(state, local_source);
+                        }
+                        Err(rescue_reason) => {
+                            state.skills.notice = Some(SkillNotice::failed(format!(
+                                "添加市场失败：{text}（自动补救未成功：{rescue_reason}）"
+                            )));
+                        }
+                    }
+                } else {
+                    state.skills.notice =
+                        Some(SkillNotice::failed(format!("添加市场失败：{text}")));
+                }
                 Task::none()
             }
         },
