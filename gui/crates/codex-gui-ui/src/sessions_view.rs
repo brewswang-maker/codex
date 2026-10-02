@@ -260,11 +260,6 @@ fn archived_section(state: &State, now: i64) -> Element<'_, Message> {
 
 /// One archived thread row: label, relative age, and the restore action.
 fn archived_row(thread: &ThreadSummary, now: i64) -> Element<'_, Message> {
-    let preview = if thread.preview.is_empty() {
-        String::from("(untitled)")
-    } else {
-        String::from(thread.preview.as_str())
-    };
     let restore = button(text("restore").size(theme::SIZE_XS).style(faint))
         .padding([2, 6])
         .style(theme::ghost_button)

@@ -475,6 +475,10 @@ pub enum Message {
     },
     /// The partial selection was dropped (Esc or a click elsewhere).
     TextSelectionCleared,
+    /// A finished drag reports where the pointer was released, in window
+    /// coordinates, so the floating quote actions can anchor near the
+    /// selection instead of the composer.
+    TextSelectionReleased { origin: iced::Point },
     /// The user pressed Ctrl+C with a partial selection live.
     TextSelectionCopyRequested,
     /// The quote bar's "加入输入" button: append the selected text to

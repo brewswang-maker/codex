@@ -1048,6 +1048,7 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
         Message::TextSelectionStarted(point) => {
             tracing::debug!(key = %point.key, offset = point.offset, "app: text selection started");
             state.selection_epoch = state.selection_epoch.wrapping_add(1);
+            state.selection_popup = None;
             state.text_selection = Some(TextSelection {
                 anchor: point.clone(),
                 focus: point,
@@ -1073,6 +1074,13 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
         Message::TextSelectionCleared => {
             tracing::debug!("app: text selection cleared");
             state.text_selection = None;
+            state.selection_popup = None;
+            Task::none()
+        }
+        Message::TextSelectionReleased { origin } => {
+            if state.text_selection.is_some() {
+                state.selection_popup = Some(origin);
+            }
             Task::none()
         }
         Message::TextSelectionCopyRequested => {
@@ -1087,9 +1095,10 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::SelectionAppendRequested { text } => {
-            // The quote bar captured the selected text at render time
-            // (the click that pressed the button also clears the live
-            // selection), so only the composer needs updating here.
+            // The floating quote actions captured the selected text at
+            // render time (the click that pressed the button also clears
+            // the live selection), so only the composer needs updating
+            // here.
             let mut merged = state.composer.clone();
             if !merged.is_empty() && !merged.ends_with('\n') {
                 merged.push('\n');
@@ -1097,6 +1106,7 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             merged.push_str(&text);
             state.set_composer(merged);
             state.text_selection = None;
+            state.selection_popup = None;
             refocus_composer()
         }
         Message::MessageHovered(id) => {

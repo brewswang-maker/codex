@@ -410,6 +410,9 @@ pub struct State {
     /// The transcript's active drag selection (a partial-text highlight),
     /// if any. Esc or a click elsewhere clears it; Ctrl+C copies it.
     pub text_selection: Option<TextSelection>,
+    /// Window coordinates where the last drag selection finished; the
+    /// floating quote actions anchor there until the selection clears.
+    pub selection_popup: Option<iced::Point>,
     /// Monotonic id of the latest drag selection; line widgets report
     /// their plain text once per epoch so a fresh drag always re-reports.
     pub selection_epoch: u64,
@@ -1026,6 +1029,7 @@ impl State {
             copied_key: None,
             hovered_message: None,
             text_selection: None,
+            selection_popup: None,
             selection_epoch: 0,
             editing: None,
             pending_edit: None,

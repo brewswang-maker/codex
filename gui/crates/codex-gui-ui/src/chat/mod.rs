@@ -645,9 +645,7 @@ fn selectable_plain_lines<'a>(
             lines = lines.push(
                 text(" ")
                     .size(size)
-                    .style(move |_| iced::widget::text::Style {
-                        color: Some(color),
-                    }),
+                    .style(move |_| iced::widget::text::Style { color: Some(color) }),
             );
             continue;
         }

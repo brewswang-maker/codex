@@ -32,6 +32,7 @@ mod requests_view;
 mod scheduler_view;
 mod scm_view;
 mod selectable;
+mod selection_popup;
 mod sessions_view;
 mod settings_view;
 mod skills_view;

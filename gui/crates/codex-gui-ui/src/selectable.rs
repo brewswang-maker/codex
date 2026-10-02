@@ -604,6 +604,19 @@ impl Widget<Message, iced::Theme, Renderer> for SelectableText {
                         shell.publish(on_link_click(link));
                     }
 
+                    // A real drag that just finished reports the release
+                    // spot in window coordinates so the floating quote
+                    // actions can anchor next to the selection. The
+                    // subtree cursor carries the scrollable's corrected
+                    // pointer; the raw event position would miss by the
+                    // whole scroll translation.
+                    if drag.moved
+                        && let Some(on_select) = &self.on_select
+                        && let Some(origin) = cursor.position()
+                    {
+                        shell.publish(on_select(SelectionEvent::Released { origin }));
+                    }
+
                     state.span_pressed = None;
                     shell.capture_event();
                 }
@@ -657,6 +670,10 @@ pub enum SelectionEvent {
     },
     /// A press landed, so any previous selection should drop.
     Cleared,
+    /// A real drag just finished; `origin` is the release spot in window
+    /// coordinates (the corrected subtree cursor, already offset by any
+    /// ancestor scrollable's translation).
+    Released { origin: iced::Point },
     /// The block is covered by the live selection; carries its full
     /// plain text for the clipboard payload.
     Line {
@@ -677,6 +694,7 @@ impl From<SelectionEvent> for Message {
                 Message::TextSelectionFocused(SelectionPoint { key, offset })
             }
             SelectionEvent::Cleared => Message::TextSelectionCleared,
+            SelectionEvent::Released { origin } => Message::TextSelectionReleased { origin },
             SelectionEvent::Line { key, text } => Message::TextSelectionLine { key, text },
         }
     }

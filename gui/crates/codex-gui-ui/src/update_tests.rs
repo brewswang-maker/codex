@@ -3576,6 +3576,42 @@ fn selection_append_into_an_empty_composer_skips_the_separator() {
 }
 
 #[test]
+fn selection_popup_tracks_release_and_drops_with_the_selection() {
+    let mut state = State::new(Flags::default_app_server());
+    let origin = iced::Point::new(120.0, 240.0);
+
+    // No live selection yet: a stray release must not open the popup.
+    let _ = update(&mut state, Message::TextSelectionReleased { origin });
+    assert!(state.selection_popup.is_none());
+
+    let _ = update(
+        &mut state,
+        Message::TextSelectionStarted(crate::state::SelectionPoint {
+            key: String::from("md:m:0:0"),
+            offset: 0,
+        }),
+    );
+    let _ = update(&mut state, Message::TextSelectionReleased { origin });
+    assert_eq!(state.selection_popup, Some(origin));
+
+    // A fresh drag dismisses the stale popup...
+    let _ = update(
+        &mut state,
+        Message::TextSelectionStarted(crate::state::SelectionPoint {
+            key: String::from("md:m:0:0"),
+            offset: 2,
+        }),
+    );
+    assert!(state.selection_popup.is_none());
+
+    // ...and so does clearing the selection.
+    let _ = update(&mut state, Message::TextSelectionReleased { origin });
+    let _ = update(&mut state, Message::TextSelectionCleared);
+    assert!(state.selection_popup.is_none());
+    assert!(state.text_selection.is_none());
+}
+
+#[test]
 fn mcp_inventory_lands_in_the_settings_panel() {
     let mut state = State::new(Flags::default_app_server());
     assert!(!state.mcp_loaded);
