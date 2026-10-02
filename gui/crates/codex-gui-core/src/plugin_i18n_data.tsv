@@ -867,3 +867,28 @@ transcribe	音频转写	将音频文件转录为文本，并可选地进行说�
 vercel-deploy	Vercel 部署	将应用和网站部署到 Vercel；用于用户请求 deploy my app、deploy and give me the link、push this live 或 create a preview deployment 等部署操作时。
 winui-app	WinUI 应用	使用 C# 和 Windows App SDK，依据 Microsoft 官方指南、WinUI Gallery 模式、Windows App SDK 示例和 CommunityTool，初始化、开发并设计现代 WinUI 3 桌面应用程序。
 yeet	Yeet 快速原型	仅当用户明确要求使用 GitHub CLI（`gh`）在一个流程中完成暂存、提交、推送并创建 GitHub Pull Request 时使用。
+
+document-skills	文档技能	文档处理套件集合，支持 Excel、Word、PowerPoint 和 PDF 文件处理。
+example-skills	示例技能	示例技能合集，涵盖技能创建、MCP 构建、视觉设计、算法艺术、内部沟通、网页测试、Artifact 构建、Slack GIFs 和主题样式设置。
+claude-api	Claude API	用于构建 LLM 驱动应用的 Claude API 和 SDK 文档技能。
+academy-guide	学院指南	当用户询问如何使用 Claude 时，推荐相关的 Claude Academy 课程、教程和使用案例。
+discernment-nudge	关键事实追问	在给出实质性回答后，追加两到三个简短的后续问题，帮助用户核查关键事实、追问推理过程并发现缺失的背景信息。
+document-skills:docx	Word 文档	处理 Word 文档/模板（.docx/.dotx）：创建、读取、编辑、提取和重组，支持目录、标题、页码、Letterhead、图片、查找替换、修订/评论及转换；报告等需交付 Word 文件时使用。
+document-skills:pdf	PDF 处理	处理所有 PDF 任务：读取/提取 PDF 文本和表格，合并、拆分、旋转、加水印、创建 PDF、填写表单、加密/解密、提取图片，或对扫描件进行 OCR 搜索。用户提及 .pdf 文件或要求生成 PDF 时使用。
+document-skills:pptx	PPT 演示	凡涉及 .pptx、.potx，或提及 deck、slides、presentation 时使用；支持创建、读取解析、提取、编辑更新、合并拆分演示文稿，处理模板、版式、演讲者备注和评论。
+document-skills:xlsx	Excel 表格	当电子表格是主要输入或输出时使用：读取、编辑、修复、新建及转换 .xlsx、.xlsm、.xltx、.csv、.tsv，支持公式、格式、图表和杂乱数据清洗；提及文件名或路径时触发，交付物须为电子表格。
+example-skills:algorithmic-art	算法艺术	使用 p5.js 和 seeded randomness 创作 algorithmic art，探索 interactive parameters。适用于代码艺术、generative art、flow fields 或 particle systems 请求；坚持原创，避免复制现有艺术家作品引发版权风险。
+example-skills:brand-guidelines	品牌规范	将 Anthropic 官方品牌色彩与字体应用于适合呈现 Anthropic 视觉风格的各类产物。当涉及品牌色彩、风格指南、视觉格式或公司设计标准时使用。
+example-skills:canvas-design	画布设计	使用design philosophy创作.png和.pdf格式的精美视觉艺术。适用于海报、艺术作品、设计等静态创作；始终原创，避免版权侵权。
+example-skills:doc-coauthoring	文档共创	通过结构化工作流协同撰写 documentation、proposals、technical specs 和 decision docs，高效迁移上下文、迭代完善内容并验证读者可用性。
+example-skills:frontend-design	前端设计	为新建或重塑 UI 提供独特且有意的视觉设计指导，帮助把控美学方向与字体排印，避免模板化的默认风格。
+example-skills:internal-comms	内部通讯	一套资源，帮助我按公司偏好的格式撰写各类内部沟通材料。凡被要求撰写状态报告、领导层更新、3P 更新、公司通讯、FAQ、事件报告或项目更新等内部沟通内容时，Claude 都应使用此技能。
+example-skills:mcp-builder	MCP 服务器构建	指导使用 Python（FastMCP）或 Node/TypeScript（MCP SDK）构建高质量 MCP 服务器，通过精心设计的工具让 LLM 与外部服务交互，适用于集成外部 API 或服务。
+example-skills:skill-creator	技能创建器	支持从零创建、修改和优化技能，运行 evals 测试技能，通过方差分析评估性能，并优化技能描述以提升触发准确率。
+example-skills:slack-gif-creator	Slack GIF 制作	提供为 Slack 创建 animated GIF 的知识与工具，含约束、验证工具和动画概念；适用于用户请求“制作一个 X 做 Y 的 Slack GIF”等场景。
+example-skills:theme-factory	主题工厂	为主题化 artifacts 提供 Toolkit，支持 slides、docs、reportings、HTML landing pages 等内容，内置 10 套配色与字体主题，可应用到已创建内容，也能即时生成新主题。
+example-skills:web-artifacts-builder	Web 构件构建器	React+Tailwind CSS+shadcn/ui创建claude.ai复杂多组件HTML artifacts；支持state management/routing，非单文件HTML/JSX。
+example-skills:webapp-testing	Web 应用测试	使用 Playwright 与本地 Web 应用交互和测试，支持验证前端功能、调试 UI 行为、捕获浏览器截图及查看浏览器日志。
+claude-api:claude-api	Claude API 参考	提供 Claude API / Anthropic SDK 的模型、定价、参数、工具调用与迁移参考。
+academy-guide:academy-guide	学院指南	Claude 用法与产品问题：查 Claude Academy 教程与案例。涵盖artifacts、projects、skills、plugins、connectors、MCP、部署、培训；仅荐强匹配。
+discernment-nudge:discernment-nudge	关键事实追问	给出可据以行动的答复或草稿后，最终回复前调用技能；适用时附2-3个简短追问，核查关键事实、推理、假设与遗漏。全程仅一次；简单查询、格式/文件处理、代码、创意写作/闲聊或已要求复核/引用时跳过。

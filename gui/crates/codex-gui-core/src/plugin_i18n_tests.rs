@@ -52,3 +52,23 @@ fn frontmatter_names_resolve_via_normalization() {
         )
     );
 }
+
+#[test]
+fn anthropic_agent_skills_resolve_by_wire_name() {
+    // The anthropic-agent-skills marketplace bundles skills under a
+    // `plugin:skill` wire name; both rows resolve from one catalog.
+    let (name, description) = localize("document-skills:docx", None);
+    assert_eq!(name, "Word 文档");
+    assert!(description.is_some_and(|text| text.contains("Word")));
+
+    let (name, _) = localize("example-skills:algorithmic-art", None);
+    assert_eq!(name, "算法艺术");
+
+    // Single-skill plugins repeat their own name after the prefix.
+    assert_eq!(localize("claude-api:claude-api", None).0, "Claude API 参考");
+
+    // The plugin rows themselves are also covered.
+    let (name, description) = localize("document-skills", None);
+    assert_eq!(name, "文档技能");
+    assert!(description.is_some_and(|text| text.contains("PDF")));
+}
