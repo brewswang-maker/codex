@@ -502,10 +502,12 @@ fn market_detail<'a>(state: &'a State, plugin_id: &str) -> Element<'a, Message> 
         return column![].into();
     };
     if detail.skills.is_empty() {
-        return text("该插件未包含 skill")
-            .size(theme::SIZE_XS)
-            .style(theme::dim)
-            .into();
+        let copy = if detail.install_required {
+            "远程源插件，安装后可查看技能详情"
+        } else {
+            "该插件未包含 skill"
+        };
+        return text(copy).size(theme::SIZE_XS).style(theme::dim).into();
     }
     let mut skills = column![].spacing(6);
     for skill in &detail.skills {

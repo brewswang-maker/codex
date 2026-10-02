@@ -207,6 +207,7 @@ fn toggle_detail_swaps_between_rows_and_collapses() {
         market.detail,
         Some(MarketDetail {
             plugin_id: "pdf-tools@local-market".to_string(),
+            install_required: true,
             skills: vec![
                 MarketSkill {
                     name: "pdf-split".to_string(),
@@ -230,6 +231,21 @@ fn toggle_detail_swaps_between_rows_and_collapses() {
             .as_ref()
             .map(|detail| detail.plugin_id.clone()),
         Some("writer@official".to_string())
+    );
+}
+
+#[test]
+fn installed_local_details_do_not_ask_for_an_install() {
+    let mut market = SkillMarket::default();
+    market.apply_list(&list_response());
+    market.toggle_detail("pdf-tools@local-market");
+
+    market.apply_detail(&installed_local_read_response("pdf-tools@local-market"));
+
+    let detail = market.detail.expect("the detail lands");
+    assert!(
+        !detail.install_required,
+        "an installed local plugin shows real details"
     );
 }
 
@@ -265,12 +281,29 @@ fn installed_and_uninstalled_mirror_onto_the_row() {
 
 /// A wire-shaped `plugin/read` payload carrying two bundled skills.
 fn read_response(plugin_id: &str) -> PluginReadResponse {
+    detail_response(plugin_id, json!({"type": "remote"}), false)
+}
+
+/// A wire-shaped `plugin/read` payload for an installed local plugin.
+fn installed_local_read_response(plugin_id: &str) -> PluginReadResponse {
+    detail_response(
+        plugin_id,
+        json!({"type": "local", "path": "/tmp/plugins/pdf-tools"}),
+        true,
+    )
+}
+
+fn detail_response(
+    plugin_id: &str,
+    source: serde_json::Value,
+    installed: bool,
+) -> PluginReadResponse {
     let marketplace = plugin_id.rsplit('@').next().unwrap_or_default();
     from_value(json!({
         "plugin": {
             "marketplaceName": marketplace,
             "marketplacePath": null,
-            "summary": plugin_json(plugin_id, plugin_id, json!({"type": "remote"}), false, false),
+            "summary": plugin_json(plugin_id, plugin_id, source, installed, false),
             "shareUrl": null,
             "description": null,
             "skills": [

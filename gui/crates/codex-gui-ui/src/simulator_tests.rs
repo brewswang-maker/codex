@@ -990,6 +990,7 @@ fn skills_market_detail_lists_the_bundled_skills() {
     state.skills.market.plugins = vec![market_plugin(false)];
     state.skills.market.detail = Some(MarketDetail {
         plugin_id: "pdf-tools@local-market".to_string(),
+        install_required: false,
         skills: vec![
             MarketSkill {
                 name: "pdf-split".to_string(),

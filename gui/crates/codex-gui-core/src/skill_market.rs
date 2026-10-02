@@ -61,6 +61,9 @@ pub enum MarketSelector {
 pub struct MarketDetail {
     /// The plugin this detail belongs to.
     pub plugin_id: String,
+    /// Whether the detail is empty only because the plugin's remote
+    /// source has not been installed yet.
+    pub install_required: bool,
     /// The plugin's bundled skills.
     pub skills: Vec<MarketSkill>,
 }
@@ -147,8 +150,15 @@ impl SkillMarket {
             return;
         }
         self.detail_loading = None;
+        let summary = &response.plugin.summary;
+        // Remote-source plugins report empty details until they are
+        // installed; the flag lets the UI ask for an install instead of
+        // claiming the plugin ships no skills.
+        let install_required =
+            !summary.installed && !matches!(summary.source, PluginSource::Local { .. });
         self.detail = Some(MarketDetail {
             plugin_id,
+            install_required,
             skills: response
                 .plugin
                 .skills
