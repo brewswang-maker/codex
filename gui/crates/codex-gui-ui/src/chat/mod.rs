@@ -610,6 +610,68 @@ fn file_change_card(changes: &[FileChangeRecord]) -> Element<'static, Message> {
     .into()
 }
 
+/// Renders `body` as one selectable block per logical line, sharing the
+/// drag-selection protocol with the markdown and user-message bodies:
+/// per-line blocks keep hit-test offsets line-relative, and empty lines
+/// keep their height with a stand-in space so a selection spans them.
+/// `namespace` scopes the drag (one card never joins another card's
+/// selection) and `block` orders sections inside one card in the
+/// clipboard payload.
+fn selectable_plain_lines<'a>(
+    state: &State,
+    namespace: &str,
+    block: usize,
+    body: &str,
+    size: impl Into<iced::Pixels>,
+    color: iced::Color,
+    font: Option<Font>,
+) -> Element<'a, Message> {
+    let size = size.into();
+    let epoch = state
+        .text_selection
+        .as_ref()
+        .map_or(0, |selection| selection.epoch);
+    let selecting = state
+        .text_selection
+        .as_ref()
+        .and_then(|selection| selection.message())
+        == Some(namespace);
+
+    let mut lines = column![].spacing(0);
+    for (index, line) in body.split('\n').enumerate() {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+
+        if line.is_empty() {
+            lines = lines.push(
+                text(" ")
+                    .size(size)
+                    .style(move |_| iced::widget::text::Style {
+                        color: Some(color),
+                    }),
+            );
+            continue;
+        }
+
+        let key = format!("{namespace}:{block}:{index}");
+        let selection = state
+            .text_selection
+            .as_ref()
+            .and_then(|selection| selection.range_for(&key, line.len()));
+        let mut widget = SelectableText::plain(key, line)
+            .size(size)
+            .color(color)
+            .selection(selection)
+            .epoch(epoch)
+            .selection_active(selecting)
+            .on_select(Message::from);
+        if let Some(font) = font {
+            widget = widget.font(font);
+        }
+        lines = lines.push(widget);
+    }
+    lines.into()
+}
+
 /// One user turn: right-aligned gray card with a faint timestamp below;
 /// hovering the row reveals copy/edit actions next to the timestamp.
 /// While the message is being edited, the bubble turns into the inline
@@ -627,43 +689,17 @@ fn user_message<'a>(
         return edit_bubble(draft);
     }
 
-    // The message body is selectable text as well: one block per logical
-    // line keeps hit-test offsets line-relative, and an empty line keeps
-    // its height with a stand-in space.
-    let namespace = format!("user:{id}");
-    let epoch = state
-        .text_selection
-        .as_ref()
-        .map_or(0, |selection| selection.epoch);
-    let selecting = state
-        .text_selection
-        .as_ref()
-        .and_then(|selection| selection.message())
-        == Some(namespace.as_str());
-    let mut body_lines = column![].spacing(0);
-    for (index, line) in body.split('\n').enumerate() {
-        let line = line.strip_suffix('\r').unwrap_or(line);
-
-        if line.is_empty() {
-            body_lines = body_lines.push(text(" ").size(theme::SIZE_BODY).style(theme::fg));
-            continue;
-        }
-
-        let key = format!("user:{id}:{index}");
-        let selection = state
-            .text_selection
-            .as_ref()
-            .and_then(|selection| selection.range_for(&key, line.len()));
-        body_lines = body_lines.push(
-            SelectableText::plain(key, line)
-                .size(theme::SIZE_BODY)
-                .color(theme::TEXT)
-                .selection(selection)
-                .epoch(epoch)
-                .selection_active(selecting)
-                .on_select(Message::from),
-        );
-    }
+    // The message body is selectable text: one block per logical line
+    // keeps hit-test offsets line-relative (see `selectable_plain_lines`).
+    let body_lines = selectable_plain_lines(
+        state,
+        &format!("user:{id}"),
+        /*block*/ 0,
+        body,
+        theme::SIZE_BODY,
+        theme::TEXT,
+        /*font*/ None,
+    );
 
     let mut card = column![body_lines].spacing(8).padding([10, 14]);
 
@@ -919,12 +955,15 @@ fn command_card<'a>(
         let body: Element<'_, Message> = if output.is_empty() {
             text("(no output)").size(theme::SIZE_XS).style(faint).into()
         } else {
-            scrollable(
-                text(String::from(output))
-                    .font(Font::MONOSPACE)
-                    .size(theme::SIZE_XS)
-                    .style(theme::dim),
-            )
+            scrollable(selectable_plain_lines(
+                state,
+                &format!("cmd:{id}"),
+                /*block*/ 0,
+                output,
+                theme::SIZE_XS,
+                theme::MUTED,
+                Some(Font::MONOSPACE),
+            ))
             .height(220)
             .width(Fill)
             .into()
@@ -977,11 +1016,15 @@ fn reasoning_card<'a>(state: &'a State, id: &str, body: &str) -> Element<'a, Mes
 
     if !collapsed {
         card = card.push(
-            container(
-                text(String::from(body))
-                    .size(theme::SIZE_SM)
-                    .style(theme::dim),
-            )
+            container(selectable_plain_lines(
+                state,
+                &format!("reason:{id}"),
+                /*block*/ 0,
+                body,
+                theme::SIZE_SM,
+                theme::MUTED,
+                /*font*/ None,
+            ))
             .padding([4, 8])
             .style(output_well),
         );
@@ -1068,30 +1111,40 @@ fn mcp_card<'a>(state: &'a State, card: McpCallCard<'_>) -> Element<'a, Message>
     if state.expanded_mcp.contains(id) {
         let mut well = column![
             text("Arguments").size(theme::SIZE_XS).style(faint),
-            text(String::from(arguments))
-                .font(Font::MONOSPACE)
-                .size(theme::SIZE_XS)
-                .style(theme::dim),
+            selectable_plain_lines(
+                state,
+                &format!("mcp:{id}"),
+                /*block*/ 0,
+                arguments,
+                theme::SIZE_XS,
+                theme::MUTED,
+                Some(Font::MONOSPACE),
+            ),
         ]
         .spacing(4);
         if let Some(error) = error {
             well = well.push(text("Error").size(theme::SIZE_XS).style(faint));
-            well = well.push(
-                text(String::from(error))
-                    .size(theme::SIZE_XS)
-                    .style(move |_| iced::widget::text::Style {
-                        color: Some(theme::DANGER),
-                    }),
-            );
+            well = well.push(selectable_plain_lines(
+                state,
+                &format!("mcp:{id}"),
+                /*block*/ 1,
+                error,
+                theme::SIZE_XS,
+                theme::DANGER,
+                /*font*/ None,
+            ));
         } else if let Some(result) = result {
             well = well.push(text("Result").size(theme::SIZE_XS).style(faint));
             well = well.push(
-                scrollable(
-                    text(String::from(result))
-                        .font(Font::MONOSPACE)
-                        .size(theme::SIZE_XS)
-                        .style(theme::dim),
-                )
+                scrollable(selectable_plain_lines(
+                    state,
+                    &format!("mcp:{id}"),
+                    /*block*/ 2,
+                    result,
+                    theme::SIZE_XS,
+                    theme::MUTED,
+                    Some(Font::MONOSPACE),
+                ))
                 .height(180)
                 .width(Fill),
             );

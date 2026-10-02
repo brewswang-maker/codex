@@ -833,24 +833,29 @@ impl TextSelection {
     }
 }
 
-/// Splits a line key into `(namespace, block, line)`: agent markdown keys
-/// are `md:{message}:{block}:{line}`, user-bubble keys are
-/// `user:{message}:{line}` (a single implicit block). The namespace keeps
-/// its `md:`/`user:` scheme so the two families never collide.
+/// Splits a line key into `(namespace, block, line)`: agent markdown and
+/// card bodies (command output, reasoning, MCP calls) are
+/// `{scheme}:{message}:{block}:{line}` keys sharing the markdown shape,
+/// user-bubble keys are `user:{message}:{line}` (a single implicit
+/// block). The namespace keeps its scheme so the families never collide.
 pub fn parse_line_key(key: &str) -> Option<(&str, usize, usize)> {
-    if let Some(rest) = key.strip_prefix("md:") {
-        let (rest, line) = rest.rsplit_once(':')?;
-        let (message, block) = rest.rsplit_once(':')?;
-        let block = block.parse().ok()?;
-        let line = line.parse().ok()?;
-        // `message` is a subslice of `key`; widening it back over the
-        // scheme keeps markdown namespaces distinct from user ones.
-        Some((&key[..message.len() + 3], block, line))
-    } else {
-        let rest = key.strip_prefix("user:")?;
-        let (message, line) = rest.rsplit_once(':')?;
-        let line = line.parse().ok()?;
-        Some((&key[..message.len() + 5], 0, line))
+    let (scheme, rest) = key.split_once(':')?;
+    match scheme {
+        "md" | "cmd" | "reason" | "mcp" => {
+            let (rest, line) = rest.rsplit_once(':')?;
+            let (message, block) = rest.rsplit_once(':')?;
+            let block = block.parse().ok()?;
+            let line = line.parse().ok()?;
+            // `message` is a subslice of `key`; widening it back over the
+            // scheme keeps namespaces distinct from user ones.
+            Some((&key[..message.len() + scheme.len() + 1], block, line))
+        }
+        "user" => {
+            let (message, line) = rest.rsplit_once(':')?;
+            let line = line.parse().ok()?;
+            Some((&key[..message.len() + 5], 0, line))
+        }
+        _ => None,
     }
 }
 

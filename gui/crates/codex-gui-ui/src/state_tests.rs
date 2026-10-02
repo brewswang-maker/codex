@@ -27,6 +27,13 @@ fn selection(anchor: (&str, usize), focus: (&str, usize)) -> TextSelection {
 fn parse_line_key_separates_the_families() {
     assert_eq!(parse_line_key("md:msg-1:2:3"), Some(("md:msg-1", 2, 3)));
     assert_eq!(parse_line_key("user:msg-1:5"), Some(("user:msg-1", 0, 5)));
+    // Card bodies join the markdown shape under their own schemes.
+    assert_eq!(parse_line_key("cmd:item-1:0:4"), Some(("cmd:item-1", 0, 4)));
+    assert_eq!(
+        parse_line_key("reason:item-2:1:0"),
+        Some(("reason:item-2", 1, 0))
+    );
+    assert_eq!(parse_line_key("mcp:item-3:2:7"), Some(("mcp:item-3", 2, 7)));
     assert_eq!(parse_line_key("code:msg-1:abc"), None);
     assert_eq!(parse_line_key("md:msg-1:x:3"), None);
     assert_eq!(parse_line_key("md:msg-1:3"), None);
@@ -47,6 +54,11 @@ fn accepts_keeps_the_focus_inside_the_anchor_message() {
     // User bubbles are their own namespace even for the same id.
     assert!(!selection.accepts(&SelectionPoint {
         key: String::from("user:m:0"),
+        offset: 1,
+    }));
+    // Card bodies are their own namespace even for the same id.
+    assert!(!selection.accepts(&SelectionPoint {
+        key: String::from("cmd:m:0:0"),
         offset: 1,
     }));
 }
