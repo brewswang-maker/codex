@@ -5,6 +5,7 @@ members = [
     "crates/codex-gui-core",
     "crates/codex-gui-ui",
     "crates/codex-plugin-sdk",
+    "crates/codex-weixin-bridge",
 ]
 resolver = "2"
 
@@ -73,8 +74,19 @@ codex-app-server-protocol = { path = "../codex-rs/app-server-protocol" }
 # build links ALSA: libasound2-dev (an alsa.pc for pkg-config) is required.
 cpal = "=0.18.2"
 
-# base64 for the realtime audio chunks (thread/realtime/appendAudio).
+# base64 for the realtime audio chunks (thread/realtime/appendAudio) and the
+# X-WECHAT-UIN header in the weixin bridge.
 base64 = "0.22.1"
+
+# WeChat iLink bridge: HTTP long-poll client, CLI surface, terminal QR rendering.
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "rustls-tls",
+] }
+clap = { version = "4", features = ["derive"] }
+rand = "0.8"
+qrcode = "0.14"
+home = "0.5"
 
 anyhow = "1"
 futures = "0.3"
