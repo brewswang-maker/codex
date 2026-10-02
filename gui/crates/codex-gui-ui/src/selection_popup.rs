@@ -5,7 +5,7 @@
 use iced::Element;
 use iced::Fill;
 use iced::alignment;
-use iced::widget::{button, container, opaque, row, stack, text};
+use iced::widget::{button, container, mouse_area, opaque, row, stack, text};
 
 use crate::Message;
 use crate::State;
@@ -40,28 +40,36 @@ pub fn layered<'a>(
     let placed = selected
         .zip(origin)
         .map(|(selected, origin)| -> Element<'a, Message> {
+            // The pill fires on press, not release: the click-away
+            // handler tears the popup (and any button's held press state)
+            // down on the very press that activates the pill, so a
+            // release-triggered button would never get to publish. The
+            // inner button is purely visual; both messages carry their
+            // text payload, so the cleared selection does not matter.
+            let pill = |label: &'a str, message: Message| -> Element<'a, Message> {
+                mouse_area(
+                    button(text(label).size(theme::SIZE_XS).style(theme::fg))
+                        .padding([4, 10])
+                        .style(theme::ghost_button),
+                )
+                .on_press(message)
+                .interaction(iced::mouse::Interaction::Pointer)
+                .into()
+            };
             let bar = row![
-                button(
-                    text(String::from("添加到会话"))
-                        .size(theme::SIZE_XS)
-                        .style(theme::fg)
-                )
-                .padding([4, 10])
-                .style(theme::ghost_button)
-                .on_press(Message::SelectionAppendRequested {
-                    text: selected.clone(),
-                }),
-                button(
-                    text(String::from("复制"))
-                        .size(theme::SIZE_XS)
-                        .style(theme::fg)
-                )
-                .padding([4, 10])
-                .style(theme::ghost_button)
-                .on_press(Message::CopyMessage {
-                    key: String::from("selection-popup"),
-                    text: selected,
-                }),
+                pill(
+                    "添加到会话",
+                    Message::SelectionAppendRequested {
+                        text: selected.clone(),
+                    },
+                ),
+                pill(
+                    "复制",
+                    Message::CopyMessage {
+                        key: String::from("selection-popup"),
+                        text: selected,
+                    },
+                ),
             ]
             .spacing(6)
             .align_y(alignment::Vertical::Center);
