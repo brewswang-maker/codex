@@ -242,6 +242,11 @@ struct Drag {
     moved: bool,
     /// Whether the drag already published its anchor as a fresh selection.
     started: bool,
+    /// The last raw pointer position while dragging, in window
+    /// coordinates. Unlike the corrected subtree cursor this carries no
+    /// scrollable translation, which is what window-anchored overlays
+    /// (the floating quote actions) need.
+    spot: Point,
 }
 
 impl Widget<Message, iced::Theme, Renderer> for SelectableText {
@@ -492,6 +497,10 @@ impl Widget<Message, iced::Theme, Renderer> for SelectableText {
                         origin,
                         moved: false,
                         started: false,
+                        // Overwritten by the first drag frame with a real
+                        // window-coordinate reading before anything reads
+                        // it back.
+                        spot: Point::ORIGIN,
                     });
                     // Only a press on the text itself can arm a link; a
                     // press on a leading marker must not fire one.
@@ -508,7 +517,7 @@ impl Widget<Message, iced::Theme, Renderer> for SelectableText {
                     shell.capture_event();
                 }
             }
-            Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+            Event::Mouse(mouse::Event::CursorMoved { position: raw }) => {
                 let Some(on_select) = &self.on_select else {
                     return;
                 };
@@ -531,6 +540,7 @@ impl Widget<Message, iced::Theme, Renderer> for SelectableText {
                 let anywhere = Point::new(position.x - bounds.x, position.y - bounds.y);
 
                 if let Some(drag) = state.drag.as_mut() {
+                    drag.spot = *raw;
                     tracing::debug!(
                         key = %self.key,
                         pos_x = anywhere.x,
@@ -607,13 +617,20 @@ impl Widget<Message, iced::Theme, Renderer> for SelectableText {
                     // A real drag that just finished reports the release
                     // spot in window coordinates so the floating quote
                     // actions can anchor next to the selection. The
-                    // subtree cursor carries the scrollable's corrected
-                    // pointer; the raw event position would miss by the
-                    // whole scroll translation.
+                    // corrected subtree cursor carries the scrollable's
+                    // translation (content coordinates — 20k px away in a
+                    // long conversation), so it must NOT be used here; the
+                    // raw event positions recorded during the drag are the
+                    // window-truth anchor.
                     if drag.moved
                         && let Some(on_select) = &self.on_select
-                        && let Some(origin) = cursor.position()
                     {
+                        let origin = drag.spot;
+                        tracing::debug!(
+                            origin_x = origin.x,
+                            origin_y = origin.y,
+                            "select: published release origin"
+                        );
                         shell.publish(on_select(SelectionEvent::Released { origin }));
                     }
 

@@ -1078,6 +1078,12 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::TextSelectionReleased { origin } => {
+            tracing::debug!(
+                origin_x = origin.x,
+                origin_y = origin.y,
+                has_selection = state.text_selection.is_some(),
+                "app: selection released"
+            );
             if state.text_selection.is_some() {
                 state.selection_popup = Some(origin);
             }
