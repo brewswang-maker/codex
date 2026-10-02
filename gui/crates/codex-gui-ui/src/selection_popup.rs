@@ -19,77 +19,83 @@ const BELOW_GAP: f32 = 14.0;
 const INSET: f32 = 8.0;
 
 /// Stacks the floating quote actions over `base` while a drag selection
-/// is live and the user has finished it. The bar only owns its own
+/// is live and the user has finished it. The layer always returns a
+/// `stack`, even without a popup: switching the base between its own
+/// element and a stack would rebuild the whole window's widget tree,
+/// resetting every scrollable's state (the transcript would jump back
+/// to the top the moment the bar appeared). The bar only owns its own
 /// footprint: clicks elsewhere fall through to the transcript, whose
 /// click-away handler clears the selection and dismisses the bar.
 pub fn layered<'a>(
     state: &'a State,
     base: impl Into<Element<'a, Message>>,
 ) -> Element<'a, Message> {
-    let Some(selected) = state
+    let selected = state
         .text_selection
         .as_ref()
         .and_then(|selection| selection.text())
         .map(|text| text.trim().to_owned())
-    else {
-        return base.into();
-    };
-    if selected.is_empty() {
-        return base.into();
+        .filter(|text| !text.is_empty());
+    let origin = state.selection_popup;
+    let placed = selected
+        .zip(origin)
+        .map(|(selected, origin)| -> Element<'a, Message> {
+            let bar = row![
+                button(
+                    text(String::from("添加到会话"))
+                        .size(theme::SIZE_XS)
+                        .style(theme::fg)
+                )
+                .padding([4, 10])
+                .style(theme::ghost_button)
+                .on_press(Message::SelectionAppendRequested {
+                    text: selected.clone(),
+                }),
+                button(
+                    text(String::from("复制"))
+                        .size(theme::SIZE_XS)
+                        .style(theme::fg)
+                )
+                .padding([4, 10])
+                .style(theme::ghost_button)
+                .on_press(Message::CopyMessage {
+                    key: String::from("selection-popup"),
+                    text: selected,
+                }),
+            ]
+            .spacing(6)
+            .align_y(alignment::Vertical::Center);
+
+            // Anchor just above the release spot; flip below when the bar would
+            // leave the window through the top. The horizontal clamp is a rough
+            // estimate — the bar is small, so the window's right edge is only a
+            // concern for releases hugging it.
+            let estimated_half_width = 96.0;
+            let x = origin.x.max(INSET + estimated_half_width) - estimated_half_width;
+            let y = if origin.y - GAP < INSET {
+                origin.y + BELOW_GAP
+            } else {
+                origin.y - GAP
+            };
+
+            let popup = container(bar).padding([6, 8]).style(theme::card);
+            container(opaque(popup))
+                .width(Fill)
+                .height(Fill)
+                .padding(iced::Padding {
+                    left: x,
+                    top: y,
+                    ..iced::Padding::ZERO
+                })
+                .align_x(alignment::Horizontal::Left)
+                .align_y(alignment::Vertical::Top)
+                .into()
+        });
+
+    match placed {
+        Some(placed) => stack![base.into(), placed].into(),
+        // A single-child stack keeps the widget tree identical across the
+        // popup's lifetime, so the transcript's scroll offset survives.
+        None => stack![base.into()].into(),
     }
-    let Some(origin) = state.selection_popup else {
-        return base.into();
-    };
-
-    let bar = row![
-        button(
-            text(String::from("添加到会话"))
-                .size(theme::SIZE_XS)
-                .style(theme::fg)
-        )
-        .padding([4, 10])
-        .style(theme::ghost_button)
-        .on_press(Message::SelectionAppendRequested {
-            text: selected.clone(),
-        }),
-        button(
-            text(String::from("复制"))
-                .size(theme::SIZE_XS)
-                .style(theme::fg)
-        )
-        .padding([4, 10])
-        .style(theme::ghost_button)
-        .on_press(Message::CopyMessage {
-            key: String::from("selection-popup"),
-            text: selected,
-        }),
-    ]
-    .spacing(6)
-    .align_y(alignment::Vertical::Center);
-
-    // Anchor just above the release spot; flip below when the bar would
-    // leave the window through the top. The horizontal clamp is a rough
-    // estimate — the bar is small, so the window's right edge is only a
-    // concern for releases hugging it.
-    let estimated_half_width = 96.0;
-    let x = origin.x.max(INSET + estimated_half_width) - estimated_half_width;
-    let y = if origin.y - GAP < INSET {
-        origin.y + BELOW_GAP
-    } else {
-        origin.y - GAP
-    };
-
-    let popup = container(bar).padding([6, 8]).style(theme::card);
-    let placed = container(opaque(popup))
-        .width(Fill)
-        .height(Fill)
-        .padding(iced::Padding {
-            left: x,
-            top: y,
-            ..iced::Padding::ZERO
-        })
-        .align_x(alignment::Horizontal::Left)
-        .align_y(alignment::Vertical::Top);
-
-    stack![base.into(), placed].into()
 }
