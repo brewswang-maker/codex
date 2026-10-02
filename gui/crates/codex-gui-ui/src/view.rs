@@ -647,7 +647,11 @@ fn composer(state: &State) -> Element<'_, Message> {
         }
     };
 
-    let mut card = column![input];
+    let mut card = column![];
+    if let Some(quote) = selection_quote(state) {
+        card = card.push(quote);
+    }
+    card = card.push(input);
     if state.attachments.hovered {
         card = card.push(drop_hint());
     }
@@ -743,6 +747,50 @@ fn model_menu_button(state: &State) -> Element<'_, Message> {
     .style(theme::ghost_button)
     .on_press(Message::ModelMenuToggled)
     .into()
+}
+
+/// The selection quote bar: with transcript text selected, offer
+/// one-click "加入输入" and copy affordances above the composer. Both
+/// buttons capture the selected text at render time, because the click
+/// that presses either one also clears the live selection.
+fn selection_quote(state: &State) -> Option<Element<'_, Message>> {
+    let selected = state.text_selection.as_ref().and_then(|s| s.text())?;
+    let trimmed = selected.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut preview: String = trimmed.chars().take(48).collect();
+    if trimmed.chars().count() > 48 {
+        preview.push('…');
+    }
+    let bar = row![
+        text(format!("「{preview}」"))
+            .size(theme::SIZE_XS)
+            .style(theme::dim),
+        iced::widget::Space::new().width(Fill),
+        button(text("加入输入").size(theme::SIZE_XS).style(theme::fg))
+            .padding([3, 8])
+            .style(theme::ghost_button)
+            .on_press(Message::SelectionAppendRequested {
+                text: selected.clone(),
+            }),
+        button(text("复制").size(theme::SIZE_XS).style(theme::fg))
+            .padding([3, 8])
+            .style(theme::ghost_button)
+            .on_press(Message::CopyMessage {
+                key: String::from("selection-quote"),
+                text: selected,
+            }),
+    ]
+    .spacing(8)
+    .align_y(alignment::Vertical::Center);
+    Some(
+        container(bar)
+            .width(Fill)
+            .padding([4, 6])
+            .style(theme::card)
+            .into(),
+    )
 }
 
 /// The hint shown while a file drag hovers over the window.

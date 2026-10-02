@@ -210,3 +210,44 @@ fn agent_message_is_latest_on_the_live_streaming_tail() {
     assert!(!agent_message_is_latest(&entries, 1));
     assert!(agent_message_is_latest(&entries, 2));
 }
+
+#[test]
+fn streaming_tail_defers_the_action_bar_until_the_turn_settles() {
+    use super::agent_message_closes_turn;
+    use crate::state::State;
+    use crate::state::Status;
+    use codex_gui_bridge::Flags;
+    use codex_gui_core::Entry;
+    use serde_json::json;
+
+    let mut state = State::new(Flags::default_app_server());
+    let note: codex_app_server_protocol::ServerNotification = serde_json::from_value(json!({
+        "method": "item/started",
+        "params": {
+            "threadId": "t1",
+            "turnId": "turn-1",
+            "startedAtMs": 0,
+            "item": {"type": "agentMessage", "id": "am-1", "text": "hi"}
+        }
+    }))
+    .expect("notification decodes");
+    state.transcript.apply(&note);
+    let index = state.transcript.entries().len() - 1;
+    assert!(matches!(
+        state.transcript.entries()[index],
+        Entry::AgentMessage { .. }
+    ));
+
+    // While the turn streams, the tail message must not flash the
+    // end-of-task markers even though it is the transcript tail.
+    state.status = Status::Thinking;
+    assert!(!agent_message_closes_turn(&state, index));
+
+    // Once the turn settles back to Ready, the tail is the closer.
+    state.status = Status::Ready;
+    assert!(agent_message_closes_turn(&state, index));
+
+    // A terminal disconnect also ends the turn.
+    state.status = Status::Disconnected(String::from("gone"));
+    assert!(agent_message_closes_turn(&state, index));
+}

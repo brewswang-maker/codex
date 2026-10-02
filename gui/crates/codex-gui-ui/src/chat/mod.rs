@@ -13,6 +13,7 @@ use crate::message::Reaction;
 use crate::selectable::SelectableText;
 use crate::state::EditDraft;
 use crate::state::State;
+use crate::state::Status;
 use crate::theme;
 use codex_app_server_protocol::ThreadTokenUsage;
 use codex_gui_core::Entry;
@@ -303,6 +304,16 @@ fn agent_message_is_latest(entries: &[Entry], index: usize) -> bool {
         .any(|entry| matches!(entry, Entry::AgentMessage { .. }))
 }
 
+/// Whether the agent message at `index` carries the end-of-turn
+/// affordances (copy/react bar and the AI attribution). Being the
+/// transcript tail is not enough: while the turn is still `Thinking`
+/// the tail is still growing — text alternates with command cards —
+/// so nothing may claim completion until the turn settles.
+fn agent_message_closes_turn(state: &State, index: usize) -> bool {
+    agent_message_is_latest(state.transcript.entries(), index)
+        && !matches!(state.status, Status::Thinking)
+}
+
 /// One collapsed run of finished command cards: a summary header that
 /// expands to the individual cards (ZCode execute-group borrow).
 fn command_group_card<'a>(state: &'a State, start: usize, end: usize) -> Element<'a, Message> {
@@ -520,12 +531,9 @@ fn render_entry<'a>(
             text: body,
             images,
         } => user_message(state, id, body, images, now),
-        Entry::AgentMessage { id, text } => agent_message(
-            state,
-            id,
-            text,
-            agent_message_is_latest(state.transcript.entries(), index),
-        ),
+        Entry::AgentMessage { id, text } => {
+            agent_message(state, id, text, agent_message_closes_turn(state, index))
+        }
         Entry::CommandExecution {
             id,
             command,
@@ -807,40 +815,46 @@ fn agent_message<'a>(
         theme::MUTED
     };
 
-    let mut actions = row![
-        icon_action(
-            copy_icon,
-            copy_kind,
-            Message::CopyMessage {
-                key,
-                text: String::from(text_body),
-            },
-        ),
-        icon_action(
-            IconKind::ThumbUp,
-            up_kind,
-            Message::ReactionToggled {
-                id: String::from(id),
-                reaction: Reaction::Up,
-            },
-        ),
-        icon_action(
-            IconKind::ThumbDown,
-            down_kind,
-            Message::ReactionToggled {
-                id: String::from(id),
-                reaction: Reaction::Down,
-            },
-        ),
-        iced::widget::Space::new().width(Fill),
-    ]
-    .spacing(6)
-    .align_y(alignment::Vertical::Center);
-    if closes_turn {
-        actions = actions.push(text("AI-generated").size(theme::SIZE_XS).style(faint));
-    }
+    // The copy/react bar and the AI attribution mean "this reply is
+    // finished"; while the turn streams, the message renders without
+    // them so a growing tail never flashes end-of-task markers.
+    let body_with_actions = if closes_turn {
+        let actions = row![
+            icon_action(
+                copy_icon,
+                copy_kind,
+                Message::CopyMessage {
+                    key,
+                    text: String::from(text_body),
+                },
+            ),
+            icon_action(
+                IconKind::ThumbUp,
+                up_kind,
+                Message::ReactionToggled {
+                    id: String::from(id),
+                    reaction: Reaction::Up,
+                },
+            ),
+            icon_action(
+                IconKind::ThumbDown,
+                down_kind,
+                Message::ReactionToggled {
+                    id: String::from(id),
+                    reaction: Reaction::Down,
+                },
+            ),
+            iced::widget::Space::new().width(Fill),
+            text("AI-generated").size(theme::SIZE_XS).style(faint),
+        ]
+        .spacing(6)
+        .align_y(alignment::Vertical::Center);
+        column![body, actions].spacing(6)
+    } else {
+        column![body]
+    };
 
-    container(column![body, actions].spacing(6))
+    container(body_with_actions)
         .width(Fill)
         .padding([6, 4])
         .into()

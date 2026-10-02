@@ -3542,6 +3542,40 @@ fn submit_clears_the_editor_buffer_not_just_the_text() {
 }
 
 #[test]
+fn selection_append_joins_the_composer_and_drops_the_selection() {
+    let mut state = State::new(Flags::default_app_server());
+    state.set_composer("existing draft");
+
+    let _ = update(
+        &mut state,
+        Message::SelectionAppendRequested {
+            text: String::from("selected text"),
+        },
+    );
+
+    // The editor renders `composer_draft`: the appended quote must land
+    // in both buffers, on its own line after the existing draft.
+    assert_eq!(state.composer, "existing draft\nselected text");
+    assert_eq!(state.composer_draft.text(), "existing draft\nselected text");
+    assert!(state.text_selection.is_none());
+}
+
+#[test]
+fn selection_append_into_an_empty_composer_skips_the_separator() {
+    let mut state = State::new(Flags::default_app_server());
+
+    let _ = update(
+        &mut state,
+        Message::SelectionAppendRequested {
+            text: String::from("first line"),
+        },
+    );
+
+    assert_eq!(state.composer, "first line");
+    assert!(state.text_selection.is_none());
+}
+
+#[test]
 fn mcp_inventory_lands_in_the_settings_panel() {
     let mut state = State::new(Flags::default_app_server());
     assert!(!state.mcp_loaded);

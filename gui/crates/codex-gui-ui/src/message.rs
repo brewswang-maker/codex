@@ -477,6 +477,10 @@ pub enum Message {
     TextSelectionCleared,
     /// The user pressed Ctrl+C with a partial selection live.
     TextSelectionCopyRequested,
+    /// The quote bar's "加入输入" button: append the selected text to
+    /// the composer. The text is captured at render time because the
+    /// click itself clears the live selection first.
+    SelectionAppendRequested { text: String },
     /// The user opened the inline editor on one sent user message.
     EditStarted(String),
     /// The inline editor buffer changed.

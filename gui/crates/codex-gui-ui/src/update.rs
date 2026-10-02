@@ -1086,6 +1086,19 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             }
             Task::none()
         }
+        Message::SelectionAppendRequested { text } => {
+            // The quote bar captured the selected text at render time
+            // (the click that pressed the button also clears the live
+            // selection), so only the composer needs updating here.
+            let mut merged = state.composer.clone();
+            if !merged.is_empty() && !merged.ends_with('\n') {
+                merged.push('\n');
+            }
+            merged.push_str(&text);
+            state.set_composer(merged);
+            state.text_selection = None;
+            refocus_composer()
+        }
         Message::MessageHovered(id) => {
             state.hovered_message = id;
             Task::none()
