@@ -161,7 +161,7 @@ fn suggestion_list(state: &State) -> Option<Element<'static, Message>> {
             .map(|thread| {
                 suggestion_row(
                     // One line only: the label is often the full prompt.
-                    crate::text_fit::ellipsize(&thread.label(), 56),
+                    crate::text_fit::ellipsize(thread.label(), 56),
                     String::from("点击继续这个 Quest"),
                     Message::SessionSelected(thread.id.clone()),
                 )

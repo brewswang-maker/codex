@@ -30,3 +30,25 @@ fn uncurated_plugins_keep_the_wire_metadata() {
         "a missing description stays missing"
     );
 }
+
+#[test]
+fn frontmatter_names_resolve_via_normalization() {
+    // Composio skills whose frontmatter name carries spaces resolve to
+    // the catalog's dashed wire name.
+    let (name, description) = localize("Ahrefs Automation", None);
+    assert_eq!(name, "Ahrefs 自动化");
+    assert!(description.is_some_and(|text| text.contains("SEO")));
+    // Exact wire names still match first.
+    assert_eq!(
+        localize("algolia-automation", None).0,
+        "Algolia 自动化".to_string()
+    );
+    // Unknown names never invent a row.
+    assert_eq!(
+        localize("Totally Unknown Skill", Some("desc")),
+        (
+            "Totally Unknown Skill".to_string(),
+            Some("desc".to_string())
+        )
+    );
+}

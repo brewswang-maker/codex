@@ -120,6 +120,7 @@ pub use model_vendors::ModelChoice;
 pub use model_vendors::VendorCatalog;
 pub use model_vendors::VendorGroup;
 pub use pins::PinnedThreads;
+pub use plugin_i18n::localize as localize_plugin;
 pub use plugin_market::PluginMarket;
 pub use plugin_market::PluginRecord;
 pub use questions::PendingQuestion;

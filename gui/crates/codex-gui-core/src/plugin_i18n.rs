@@ -193,7 +193,7 @@ static MARKETPLACE_CATALOG: LazyLock<HashMap<&'static str, (&'static str, &'stat
 /// their wire name and whatever description the wire provided (`None` stays
 /// `None`).
 pub fn localize(plugin_name: &str, description: Option<&str>) -> (String, Option<String>) {
-    if let Some((display_name, short_description)) = MARKETPLACE_CATALOG.get(plugin_name) {
+    if let Some((display_name, short_description)) = marketplace_lookup(plugin_name) {
         return (
             (*display_name).to_string(),
             Some((*short_description).to_string()),
@@ -209,6 +209,20 @@ pub fn localize(plugin_name: &str, description: Option<&str>) -> (String, Option
         ),
         None => (plugin_name.to_string(), description.map(str::to_string)),
     }
+}
+
+/// Resolves one marketplace row by wire name, falling back to the
+/// normalized form (lowercase, spaces as dashes) so frontmatter names
+/// like `Ahrefs Automation` resolve to `ahrefs-automation`.
+fn marketplace_lookup(plugin_name: &str) -> Option<&'static (&'static str, &'static str)> {
+    let catalog = &*MARKETPLACE_CATALOG;
+    catalog
+        .get(plugin_name)
+        .or_else(|| catalog.get(normalize_wire_name(plugin_name).as_str()))
+}
+
+fn normalize_wire_name(name: &str) -> String {
+    name.to_lowercase().replace(' ', "-")
 }
 
 #[cfg(test)]

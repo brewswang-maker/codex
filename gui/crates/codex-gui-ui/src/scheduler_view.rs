@@ -57,7 +57,7 @@ fn new_task_form(state: &State) -> Element<'_, Message> {
     let kind_switch = row![
         checkbox(panel.draft_once)
             .label("一次性")
-            .on_toggle(|once| Message::SchedulerDraftOncePicked(once)),
+            .on_toggle(Message::SchedulerDraftOncePicked),
         checkbox(!panel.draft_once)
             .label("周期性")
             .on_toggle(|recurring| Message::SchedulerDraftOncePicked(!recurring)),

@@ -509,17 +509,27 @@ fn market_detail<'a>(state: &'a State, plugin_id: &str) -> Element<'a, Message> 
     }
     let mut skills = column![].spacing(6);
     for skill in &detail.skills {
-        skills = skills.push(
-            column![
+        let (display_name, display_description) =
+            codex_gui_core::localize_plugin(&skill.name, Some(&skill.description));
+        let display_description = display_description.unwrap_or_else(|| skill.description.clone());
+        let mut entry = column![
+            text(format!("${display_name}"))
+                .size(theme::SIZE_SM)
+                .style(theme::fg),
+            text(display_description)
+                .size(theme::SIZE_XS)
+                .style(theme::dim),
+        ]
+        .spacing(2);
+        if display_name != skill.name {
+            // The mention syntax needs the wire name; keep it discoverable.
+            entry = entry.push(
                 text(format!("${}", skill.name))
-                    .size(theme::SIZE_SM)
-                    .style(theme::fg),
-                text(skill.description.clone())
                     .size(theme::SIZE_XS)
-                    .style(theme::dim),
-            ]
-            .spacing(2),
-        );
+                    .style(theme::faint_text),
+            );
+        }
+        skills = skills.push(entry);
     }
     skills.into()
 }
