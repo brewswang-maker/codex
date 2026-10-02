@@ -43,10 +43,18 @@ const CHINESE_SKILLS: &[(&str, &str)] = &[
         "把设计内全部文字翻译为其他语言",
     ),
     ("code-breaking-changes", "检查对外集成面的破坏性变更"),
+    (
+        "code-defect-audit",
+        "按七大缺陷面做证据驱动的代码审查并输出分级发现清单",
+    ),
     ("code-review", "对拉取请求做收尾代码评审"),
     ("code-review-change-size", "改动规模规范：单次不超过 800 行"),
     ("code-review-context", "评审模型可见上下文的写法"),
     ("code-review-testing", "评审测试编写规范"),
+    (
+        "code-redundancy-cleanup",
+        "安全网流程下消除死代码、重复与冗余分配并验证行为不变",
+    ),
     ("codex-pr-body", "更新一个或多个 PR 的标题与正文"),
     (
         "codex-security:assess-patch-risk",
