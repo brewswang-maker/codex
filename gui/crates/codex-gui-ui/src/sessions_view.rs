@@ -272,7 +272,13 @@ fn archived_row(thread: &ThreadSummary, now: i64) -> Element<'_, Message> {
 
     container(
         row![
-            container(text(preview).size(theme::SIZE_MD).style(theme::dim)).width(Fill),
+            container(
+                text(sidebar_title(&thread.preview))
+                    .size(theme::SIZE_MD)
+                    .style(theme::dim)
+                    .wrapping(text::Wrapping::None),
+            )
+            .width(Fill),
             text(chat::relative_time(thread.updated_at, now))
                 .size(theme::SIZE_XS)
                 .style(faint),
@@ -322,21 +328,37 @@ fn group_header(cwd: &str) -> Element<'static, Message> {
         .into()
 }
 
+/// The one-line sidebar title for a thread: the markdown emphasis and
+/// backtick markers are stripped from the preview's first line, and the
+/// rest is hard-truncated (the row text itself never wraps).
+fn sidebar_title(preview: &str) -> String {
+    const MAX_CHARS: usize = 24;
+
+    if preview.is_empty() {
+        return String::from("(untitled)");
+    }
+    let first = preview.lines().next().unwrap_or(preview);
+    let cleaned = first.replace("**", "").replace('`', "");
+    let mut title: String = cleaned.chars().take(MAX_CHARS).collect();
+    if cleaned.chars().count() > MAX_CHARS {
+        title.push('…');
+    }
+    title
+}
+
 /// One thread row: white card while active, preview plus relative age,
 /// a pin toggle, and (on the active row) the live diff totals badge.
 fn thread_row<'a>(state: &'a State, thread: &'a ThreadSummary, now: i64) -> Element<'a, Message> {
     let id = thread.id.clone();
     let active = state.thread_id.as_deref() == Some(thread.id.as_str());
 
-    let preview = if thread.preview.is_empty() {
-        String::from("(untitled)")
-    } else {
-        String::from(thread.preview.as_str())
-    };
-    let label = text(preview)
+    // One line per row: long previews clip instead of wrapping the
+    // sidebar card into a wall of text.
+    let label = text(sidebar_title(&thread.preview))
         .size(theme::SIZE_MD)
         .style(theme::fg)
-        .font(bold_if(active));
+        .font(bold_if(active))
+        .wrapping(text::Wrapping::None);
 
     let age = chat::relative_time(thread.updated_at, now);
     let pinned = state.pins.is_pinned(&thread.id);

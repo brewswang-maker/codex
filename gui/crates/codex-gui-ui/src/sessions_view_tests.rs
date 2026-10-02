@@ -46,3 +46,21 @@ fn summary(id: &str, cwd: &str) -> ThreadSummary {
         name: None,
     }
 }
+
+/// The sidebar title is one line: markdown markers stripped from the
+/// first line, then hard-truncated with an ellipsis.
+#[test]
+fn sidebar_title_flattens_and_truncates_the_preview() {
+    use super::sidebar_title;
+
+    assert_eq!(sidebar_title(""), "(untitled)");
+    // Emphasis markers go; everything after the first line never renders.
+    assert_eq!(
+        sidebar_title("**设备拉流接入**，事件规则联动\n第二行"),
+        "设备拉流接入，事件规则联动"
+    );
+    let long = "a".repeat(30);
+    let titled = sidebar_title(&long);
+    assert_eq!(titled.chars().count(), 25);
+    assert!(titled.ends_with('…'));
+}
