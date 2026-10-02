@@ -64,7 +64,9 @@ fn row_button<'a>(state: &'a State, thread: &'a ThreadSummary, now: i64) -> Elem
     button(
         row![
             activity_dot(status_color(thread.status)),
-            container(label).width(Fill),
+            // The ellipsis budget is a guess; the clip guarantees the
+            // oversized label never paints over the badge and age.
+            container(label).width(Fill).clip(true),
             status_badge(thread.status),
             text(chat::relative_time(thread.updated_at, now))
                 .size(theme::SIZE_XS)

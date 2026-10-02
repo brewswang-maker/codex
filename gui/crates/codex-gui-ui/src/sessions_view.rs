@@ -273,7 +273,8 @@ fn archived_row(thread: &ThreadSummary, now: i64) -> Element<'_, Message> {
                     .style(theme::dim)
                     .wrapping(text::Wrapping::None),
             )
-            .width(Fill),
+            .width(Fill)
+            .clip(true),
             text(chat::relative_time(thread.updated_at, now))
                 .size(theme::SIZE_XS)
                 .style(faint),
@@ -393,7 +394,9 @@ fn thread_row<'a>(state: &'a State, thread: &'a ThreadSummary, now: i64) -> Elem
         .push(archive);
 
     container(
-        button(row![container(label).width(Fill), trailing,])
+        // Clip keeps an oversized one-line label from painting over the
+        // trailing age, pin, and archive controls.
+        button(row![container(label).width(Fill).clip(true), trailing,])
             .padding([8, 10])
             .style(theme::rail_button(active))
             .on_press(Message::SessionSelected(thread.id.clone()))
