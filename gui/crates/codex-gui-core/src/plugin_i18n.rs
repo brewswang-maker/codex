@@ -6,6 +6,9 @@
 //! table does not know, so plugins published after this table ships still
 //! render.
 
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
 /// Curated plugins with Chinese display copy: `(wire name, display name,
 /// one-line description)`.
 const CHINESE_CATALOG: &[(&str, &str, &str)] = &[
@@ -169,12 +172,33 @@ const CHINESE_CATALOG: &[(&str, &str, &str)] = &[
     ("zoom", "Zoom", "来自 Zoom 的智能会议洞察"),
 ];
 
+/// Generated Chinese copy for the wrapped Composio and OpenAI skill
+/// marketplaces, one row per plugin as
+/// `wire name<TAB>display name<TAB>one-line description`.
+static MARKETPLACE_CATALOG: LazyLock<HashMap<&'static str, (&'static str, &'static str)>> =
+    LazyLock::new(|| {
+        include_str!("plugin_i18n_data.tsv")
+            .lines()
+            .filter_map(|line| {
+                let (wire, rest) = line.split_once('\t')?;
+                let (display, description) = rest.split_once('\t')?;
+                Some((wire, (display, description)))
+            })
+            .collect()
+    });
+
 /// Localizes one plugin's display name and one-line description.
 ///
 /// Curated plugins render the Chinese copy; plugins outside the table keep
 /// their wire name and whatever description the wire provided (`None` stays
 /// `None`).
 pub fn localize(plugin_name: &str, description: Option<&str>) -> (String, Option<String>) {
+    if let Some((display_name, short_description)) = MARKETPLACE_CATALOG.get(plugin_name) {
+        return (
+            (*display_name).to_string(),
+            Some((*short_description).to_string()),
+        );
+    }
     match CHINESE_CATALOG
         .iter()
         .find(|(name, _, _)| *name == plugin_name)
