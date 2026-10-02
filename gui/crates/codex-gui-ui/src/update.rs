@@ -899,6 +899,13 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
                 state.skills.notice = Some(SkillNotice::failed("请先填写市场来源"));
                 return Task::none();
             }
+            // The add clones the source repository on the app-server side
+            // and queues behind the serial config queue, so it can sit for
+            // tens of seconds; surface that immediately or the page looks
+            // frozen while the request is pending.
+            state.skills.notice = Some(SkillNotice::ok(format!(
+                "正在添加市场 `{source}`…（克隆仓库可能需要一些时间）"
+            )));
             commands::add_marketplace(state, source)
         }
         Message::SkillMarketSourceAdded(result) => match result {
