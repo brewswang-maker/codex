@@ -508,7 +508,7 @@ impl Widget<Message, iced::Theme, Renderer> for SelectableText {
                     shell.capture_event();
                 }
             }
-            Event::Mouse(mouse::Event::CursorMoved { position }) => {
+            Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let Some(on_select) = &self.on_select else {
                     return;
                 };
@@ -516,10 +516,30 @@ impl Widget<Message, iced::Theme, Renderer> for SelectableText {
                 // left this line; the focus itself follows the pointer
                 // anywhere on the line's row, including the blank space
                 // right of a short line's end.
-                let local = row_position(bounds, *position);
+                //
+                // Track the corrected cursor, not the raw event position:
+                // since iced 0.14 a scrollable applies its translation at
+                // draw time, so `bounds` is in content coordinates while
+                // the raw event position stays in window coordinates — the
+                // two only agree while the transcript sits unscrolled at
+                // the very top, which is why drags died mid-selection in
+                // any real conversation.
+                let Some(position) = cursor.position() else {
+                    return;
+                };
+                let local = row_position(bounds, position);
                 let anywhere = Point::new(position.x - bounds.x, position.y - bounds.y);
 
                 if let Some(drag) = state.drag.as_mut() {
+                    tracing::debug!(
+                        key = %self.key,
+                        pos_x = anywhere.x,
+                        pos_y = anywhere.y,
+                        bounds_y = bounds.y,
+                        bounds_h = bounds.height,
+                        hit = local.is_some(),
+                        "select: drag move"
+                    );
                     if !drag.moved {
                         let dx = anywhere.x - drag.origin.x;
                         let dy = anywhere.y - drag.origin.y;
@@ -551,18 +571,25 @@ impl Widget<Message, iced::Theme, Renderer> for SelectableText {
                         // capture is seen — capturing here would freeze
                         // every code line outside the anchor's stack.
                     }
-                } else if let Some(local) = local
-                    && self.selection_active
-                {
-                    // The drag belongs to another line of this message;
-                    // the pointer is over this one, so this line becomes
-                    // the focus instead.
-                    let offset = hit_offset(&state.paragraph, local, self.content.len());
-                    tracing::debug!(key = %self.key, offset, "select: focus");
-                    shell.publish(on_select(SelectionEvent::Focused {
-                        key: self.key.clone(),
-                        offset,
-                    }));
+                } else if self.selection_active {
+                    tracing::debug!(
+                        key = %self.key,
+                        pos_x = anywhere.x,
+                        pos_y = anywhere.y,
+                        hit = local.is_some(),
+                        "select: sweep"
+                    );
+                    if let Some(local) = local {
+                        // The drag belongs to another line of this message;
+                        // the pointer is over this one, so this line becomes
+                        // the focus instead.
+                        let offset = hit_offset(&state.paragraph, local, self.content.len());
+                        tracing::debug!(key = %self.key, offset, "select: focus");
+                        shell.publish(on_select(SelectionEvent::Focused {
+                            key: self.key.clone(),
+                            offset,
+                        }));
+                    }
                 }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
