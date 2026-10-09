@@ -13,8 +13,12 @@ codex-app-server-protocol = { path = "../../../codex-rs/app-server-protocol" }
 codex-utils-absolute-path = { path = "../../../codex-rs/utils/absolute-path" }
 codex-gui-bridge = { workspace = true }
 codex-gui-core = { workspace = true }
+# In-GUI WeChat binding: reuses the bridge's QR login flow (run_login,
+# Store) instead of shelling out to the CLI.
+codex-weixin-bridge = { path = "../codex-weixin-bridge" }
 iced = { workspace = true }
 iced-swdir-tree = { workspace = true }
+qrcode.workspace = true
 rfd = { workspace = true }
 serde_json = "1"
 # Drives the timed copy-badge expiry; shares the executor runtime the

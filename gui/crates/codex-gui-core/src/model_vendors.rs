@@ -96,6 +96,11 @@ impl VendorCatalog {
     /// marks (or appends) the providers the user has configured. The
     /// preset groups rebuild from the skeleton first, so repeated calls
     /// stay idempotent.
+    ///
+    /// Multi-account support: when a second provider shares the same
+    /// preset (same host) but has a different config key, it is appended
+    /// as its own group so both accounts stay individually selectable
+    /// in the picker (e.g. GLM 主号 + 备用号).
     pub fn apply_config(
         &mut self,
         model: Option<&str>,
@@ -110,20 +115,35 @@ impl VendorCatalog {
         self.groups = rebuilt.groups;
 
         for provider in providers {
-            if let Some(group) = self
+            let preset_index = self
                 .groups
-                .iter_mut()
-                .find(|group| preset_matches(&group.id, &provider.base_url))
-            {
+                .iter()
+                .position(|group| preset_matches(&group.id, &provider.base_url));
+            // Only take over an unclaimed preset group; when the preset is
+            // already claimed by a different provider key, fall through to
+            // the append branch below so the second account gets its own row.
+            let claimable = preset_index.is_some_and(|index| {
+                self.groups[index]
+                    .provider_id
+                    .as_deref()
+                    .is_none_or(|existing| existing == provider.id)
+            });
+            if let (Some(index), true) = (preset_index, claimable) {
+                let group = &mut self.groups[index];
                 group.configured = true;
                 group.provider_id = Some(provider.id.clone());
             } else {
+                // Duplicate host with a different key OR no preset match:
+                // append a new group inheriting the preset's model list.
+                let inherited_models = preset_index
+                    .map(|index| self.groups[index].models.clone())
+                    .unwrap_or_default();
                 self.groups.push(VendorGroup {
                     id: provider.id.clone(),
                     name: provider.name.clone().unwrap_or_else(|| provider.id.clone()),
                     provider_id: Some(provider.id.clone()),
                     configured: true,
-                    models: Vec::new(),
+                    models: inherited_models,
                 });
             }
         }

@@ -44,6 +44,8 @@ mod theme;
 mod update;
 mod update_boards;
 mod view;
+mod weixin_binding;
+mod weixin_view;
 mod welcome_view;
 
 pub use message::Bootstrap;
@@ -420,11 +422,20 @@ pub fn subscription(state: &State) -> Subscription<Message> {
         })
     });
 
+    // The WeChat pane polls its on-disk projection so daemon starts and
+    // stops from outside the GUI (terminal, pane button, crashes) all
+    // land within one interval; the poll only lives while the tab is open.
+    let weixin_tick = matches!(state.sidebar_tab, crate::message::SidebarTab::Weixin).then(|| {
+        iced::time::every(std::time::Duration::from_secs(5))
+            .map(|_instant| Message::WeixinPanelRefresh)
+    });
+
     Subscription::batch([
         connection,
         drops,
         tick.unwrap_or_else(Subscription::none),
         boards_tick,
+        weixin_tick.unwrap_or_else(Subscription::none),
         shift_tracker,
         new_quest_keys,
         settings_keys.unwrap_or_else(Subscription::none),

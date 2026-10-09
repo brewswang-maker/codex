@@ -93,6 +93,57 @@ fn unknown_providers_join_as_custom_groups_and_stay_idempotent() {
     assert_eq!(catalog.groups().iter().filter(|g| g.id == "glm").count(), 1);
 }
 
+// Multi-account support: two providers sharing one vendor preset's host
+// must each render as their own selectable group so the model picker can
+// switch between accounts (e.g. GLM 主号 + GLM 备用).
+#[test]
+fn same_host_different_keys_split_into_two_groups() {
+    let mut catalog = VendorCatalog::skeleton();
+    catalog.apply_config(
+        Some("glm-5.3-flashx"),
+        Some("glm"),
+        &[
+            provider("glm", Some("GLM (智谱)"), "https://open.bigmodel.cn/api/v1"),
+            provider("glm2", Some("GLM 备用"), "https://open.bigmodel.cn/api/v1"),
+        ],
+    );
+
+    let glm_main = catalog
+        .groups()
+        .iter()
+        .find(|g| g.id == "glm")
+        .expect("glm preset group");
+    let glm_backup = catalog
+        .groups()
+        .iter()
+        .find(|g| g.id == "glm2")
+        .expect("glm2 appended group");
+    assert!(glm_main.configured);
+    assert!(glm_backup.configured);
+    assert_eq!(glm_main.provider_id.as_deref(), Some("glm"));
+    assert_eq!(glm_backup.provider_id.as_deref(), Some("glm2"));
+    assert_eq!(glm_backup.name, "GLM 备用");
+    // The appended group inherits the preset's suggestion list so both
+    // accounts remain selectable with the same model names.
+    let main_slugs: Vec<&str> = glm_main.models.iter().map(|m| m.slug.as_str()).collect();
+    let backup_slugs: Vec<&str> = glm_backup.models.iter().map(|m| m.slug.as_str()).collect();
+    assert_eq!(main_slugs, backup_slugs);
+    assert!(!main_slugs.is_empty());
+}
+
+#[test]
+fn multi_account_apply_config_is_idempotent() {
+    let mut catalog = VendorCatalog::skeleton();
+    let providers = [
+        provider("glm", Some("GLM (智谱)"), "https://open.bigmodel.cn/api/v1"),
+        provider("glm2", Some("GLM 备用"), "https://open.bigmodel.cn/api/v1"),
+    ];
+    catalog.apply_config(None, None, &providers);
+    let after_first = catalog.groups().len();
+    catalog.apply_config(None, None, &providers);
+    assert_eq!(catalog.groups().len(), after_first, "rebuild stays stable");
+}
+
 #[test]
 fn catalog_entries_replace_the_active_providers_suggestions() {
     let mut catalog = VendorCatalog::skeleton();

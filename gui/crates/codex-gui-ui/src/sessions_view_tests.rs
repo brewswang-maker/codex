@@ -44,6 +44,7 @@ fn summary(id: &str, cwd: &str) -> ThreadSummary {
         cwd: String::from(cwd),
         status: QuestStatus::Idle,
         name: None,
+        from_weixin: false,
     }
 }
 

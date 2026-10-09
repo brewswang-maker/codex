@@ -133,6 +133,11 @@ const CHINESE_CATALOG: &[(&str, &str, &str)] = &[
         "OpenAI 开发者",
         "按 OpenAI 最佳实践开发 AI 应用、智能体与 ChatGPT 应用",
     ),
+    (
+        "open-code-review-codex",
+        "结构化代码评审",
+        "通过本地 Codex 运行结构化代码评审",
+    ),
     ("outlook-calendar", "Outlook 日历", "管理 Outlook 日程"),
     ("outlook-email", "Outlook 邮箱", "分类处理 Outlook 收件箱"),
     (
@@ -141,6 +146,11 @@ const CHINESE_CATALOG: &[(&str, &str, &str)] = &[
         "从对话开始，在本地评测或跑基准测试",
     ),
     ("posthog", "PostHog", "分析你的产品数据"),
+    (
+        "ponytail",
+        "最懒资深工程师",
+        "强制以最简可行方案写最少代码（YAGNI）",
+    ),
     ("product-design", "产品设计", "探索并原型化想法"),
     (
         "public-equity-investing",
@@ -187,12 +197,41 @@ static MARKETPLACE_CATALOG: LazyLock<HashMap<&'static str, (&'static str, &'stat
             .collect()
     });
 
+/// Generated Chinese copy for individual marketplace skills, one row per
+/// skill as `plugin:skill wire name<TAB>display<TAB>one-line description`.
+/// The display column repeats the wire name: skill identifiers feed the
+/// composer mention syntax, so only the description is localized.
+static SKILL_CATALOG: LazyLock<HashMap<&'static str, (&'static str, &'static str)>> =
+    LazyLock::new(|| {
+        include_str!("plugin_i18n_skills.tsv")
+            .lines()
+            .filter_map(|line| {
+                let (wire, rest) = line.split_once('\t')?;
+                let (display, description) = rest.split_once('\t')?;
+                Some((wire, (display, description)))
+            })
+            .collect()
+    });
+
 /// Localizes one plugin's display name and one-line description.
 ///
 /// Curated plugins render the Chinese copy; plugins outside the table keep
 /// their wire name and whatever description the wire provided (`None` stays
 /// `None`).
 pub fn localize(plugin_name: &str, description: Option<&str>) -> (String, Option<String>) {
+    // Skill rows arrive as `plugin:skill` wire names; resolve them against
+    // the per-skill catalog first, then the marketplace table (which carries
+    // a few hand-written `plugin:skill` rows), then fall back to the owning
+    // plugin's entry (single-skill plugins reuse its copy).
+    if plugin_name.contains(':') {
+        if let Some((display_name, short_description)) = skill_copy(plugin_name) {
+            return (
+                display_name.to_string(),
+                Some(short_description.to_string()),
+            );
+        }
+        return (plugin_name.to_string(), description.map(str::to_string));
+    }
     if let Some((display_name, short_description)) = marketplace_lookup(plugin_name) {
         return (
             (*display_name).to_string(),
@@ -209,6 +248,31 @@ pub fn localize(plugin_name: &str, description: Option<&str>) -> (String, Option
         ),
         None => (plugin_name.to_string(), description.map(str::to_string)),
     }
+}
+
+/// Resolves one `plugin:skill` wire name to its Chinese (display, one-line
+/// description) copy: the per-skill catalog first, then the marketplace
+/// table (which carries a few hand-written `plugin:skill` rows), then the
+/// owning plugin's entry so single-skill plugins reuse their copy.
+/// Shared with the composer skill picker (`skill_i18n`).
+pub(crate) fn skill_copy(skill_name: &str) -> Option<(&'static str, &'static str)> {
+    if let Some(&(display, description)) = skill_lookup(skill_name) {
+        return Some((display, description));
+    }
+    if let Some(&(display, description)) = marketplace_lookup(skill_name) {
+        return Some((display, description));
+    }
+    let parent = skill_name.split(':').next()?;
+    marketplace_lookup(parent).map(|&(display, description)| (display, description))
+}
+
+/// Resolves one skill row by `plugin:skill` wire name, falling back to the
+/// normalized form so frontmatter names with spaces or capitals still hit.
+fn skill_lookup(skill_name: &str) -> Option<&'static (&'static str, &'static str)> {
+    let catalog = &*SKILL_CATALOG;
+    catalog
+        .get(skill_name)
+        .or_else(|| catalog.get(normalize_wire_name(skill_name).as_str()))
 }
 
 /// Resolves one marketplace row by wire name, falling back to the

@@ -7,6 +7,10 @@ use crate::message::SkillImportTarget;
 use crate::state::State;
 use crate::state::Status;
 use crate::state::VoiceInputStatus;
+use crate::weixin_binding::BINDING_TIMEOUT;
+use crate::weixin_binding::BindingEvent;
+use crate::weixin_binding::WeixinBinding;
+use crate::weixin_binding::map_login_event;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ClientInfo;
 use codex_app_server_protocol::ClientRequest;
@@ -74,6 +78,11 @@ use codex_gui_core::MarketSelector;
 use codex_gui_core::SessionHistory;
 use codex_gui_core::compose_inputs;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_weixin_bridge::wechat::auth::LoginOutcome;
+use codex_weixin_bridge::wechat::auth::Store;
+use codex_weixin_bridge::wechat::auth::run_login;
+use codex_weixin_bridge::wechat::client::WeixinClient;
+use codex_weixin_bridge::wechat::types::DEFAULT_BASE_URL;
 use iced::Task;
 use iced::futures::SinkExt as _;
 use std::path::PathBuf;
@@ -418,6 +427,7 @@ fn thread_list_params(archived: Option<bool>) -> ThreadListParams {
     ThreadListParams {
         cursor: None,
         limit: None,
+        excluded_thread_ids: None,
         sort_key: None,
         sort_direction: None,
         // An explicit empty list means "every provider". Omitting the field
@@ -1033,6 +1043,185 @@ pub(crate) fn import_skill_from_link(state: &State, link: String) -> Task<Messag
             }
         });
         Message::SkillMutationSettled(result)
+    })
+}
+
+/// Reads the WeChat bridge's runtime files into the panel projection.
+pub(crate) fn load_weixin_panel(state: &State) -> Task<Message> {
+    let Some(home) = state.codex_home.clone() else {
+        return Task::done(Message::WeixinPanelLoaded(Err(
+            "app-server 尚未返回 codexHome，等待连接完成后再试".to_string(),
+        )));
+    };
+    Task::future(async move {
+        let data = codex_gui_core::read_panel(&home, |pid| {
+            std::path::Path::new(&format!("/proc/{pid}")).exists()
+        });
+        Message::WeixinPanelLoaded(Ok(data))
+    })
+}
+
+/// Grants a pending WeChat contact, then reloads the projection so the
+/// row moves to the allowlist immediately.
+pub(crate) fn allow_weixin_contact(state: &State, contact: String) -> Task<Message> {
+    let Some(home) = state.codex_home.clone() else {
+        return Task::done(Message::WeixinPanelLoaded(Err(
+            "app-server 尚未返回 codexHome，等待连接完成后再试".to_string(),
+        )));
+    };
+    Task::future(async move {
+        match codex_gui_core::grant_contact(&home, &contact) {
+            Ok(()) => {
+                let data = codex_gui_core::read_panel(&home, |pid| {
+                    std::path::Path::new(&format!("/proc/{pid}")).exists()
+                });
+                Message::WeixinPanelLoaded(Ok(data))
+            }
+            Err(err) => Message::WeixinPanelLoaded(Err(err)),
+        }
+    })
+}
+
+/// Opens the in-GUI binding view and runs the bridge's QR login flow
+/// inside a stream task: login events stream in as messages, and the
+/// oneshot stop signal drops the polling future on cancel.
+pub(crate) fn start_weixin_binding(state: &mut State) -> Task<Message> {
+    let Some(home) = state.codex_home.clone() else {
+        state.weixin_binding = Some(WeixinBinding::failed(
+            "app-server 尚未返回 codexHome，连接后再试".to_string(),
+        ));
+        return Task::none();
+    };
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+    let binding = WeixinBinding::starting(stop_tx);
+    let verify_slot = binding.verify_code.clone();
+    state.weixin_binding = Some(binding);
+
+    Task::stream(iced::stream::channel(
+        32,
+        move |mut output: iced::futures::channel::mpsc::Sender<Message>| async move {
+            let client = match WeixinClient::new(DEFAULT_BASE_URL, None) {
+                Ok(client) => client,
+                Err(error) => {
+                    let _ignored = output
+                        .send(Message::WeixinBindingEvent(BindingEvent::Finished(Err(
+                            format!("初始化微信客户端失败: {error}"),
+                        ))))
+                        .await;
+                    return;
+                }
+            };
+            // The sync event callback cannot await, so it leans on
+            // try_send against a buffer sized far beyond the flow's ≥1 s
+            // event cadence; the final outcome goes through send().
+            let mut event_output = output.clone();
+            let mut stop_rx = stop_rx;
+            let outcome = tokio::select! {
+                outcome = run_login(
+                    &client,
+                    BINDING_TIMEOUT,
+                    |event| {
+                        if let Some(event) = map_login_event(event) {
+                            let _ignored =
+                                event_output.try_send(Message::WeixinBindingEvent(event));
+                        }
+                    },
+                    || {
+                        let slot = verify_slot.clone();
+                        Box::pin(async move {
+                            crate::weixin_binding::wait_for_verify_code(slot).await
+                        })
+                            as std::pin::Pin<
+                                Box<dyn std::future::Future<Output = String> + Send>,
+                            >
+                    },
+                ) => Some(outcome),
+                _ = &mut stop_rx => None,
+            };
+
+            let finished = match outcome {
+                Some(LoginOutcome::Connected(account)) => {
+                    let store = Store::new(&home);
+                    match store.save_account(&account) {
+                        Ok(()) => Ok(format!("已连接微信（bot {}）", account.account_id)),
+                        Err(error) => Err(format!("凭据保存失败: {error}")),
+                    }
+                }
+                Some(LoginOutcome::AlreadyConnected) => {
+                    Ok("此机器人已连接过，本地凭据保持有效。".to_string())
+                }
+                Some(LoginOutcome::Failed(message)) => Err(message),
+                // Cancelled: the pane is already gone; say nothing.
+                None => return,
+            };
+            let _ignored = output
+                .send(Message::WeixinBindingEvent(BindingEvent::Finished(
+                    finished,
+                )))
+                .await;
+        },
+    ))
+}
+
+/// Spawns the bridge daemon (`codex-weixin-bridge run`) sitting next to
+/// the GUI binary, appending its output to the runtime log, then lets
+/// the pane reflect the fresh liveness projection.
+pub(crate) fn start_weixin_daemon(state: &State) -> Task<Message> {
+    let Some(home) = state.codex_home.clone() else {
+        return Task::done(Message::WeixinPanelLoaded(Err(
+            "app-server 尚未返回 codexHome，等待连接完成后再试".to_string(),
+        )));
+    };
+    // The daemon must talk to the same backend the GUI uses; reuse the
+    // launch flags' program instead of guessing from `PATH`.
+    let program = state.flags.program.display().to_string();
+    let bridge = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("codex-weixin-bridge")));
+
+    Task::future(async move {
+        let Some(bridge) = bridge.filter(|path| path.exists()) else {
+            return Message::WeixinPanelLoaded(Err(
+                "未找到 codex-weixin-bridge 可执行文件（应与 GUI 同目录）".to_string(),
+            ));
+        };
+        let runtime = home.join(codex_gui_core::WEIXIN_BRIDGE_DIR).join("runtime");
+        let _ignored = std::fs::create_dir_all(&runtime);
+        let log_path = runtime.join("bridge-daemon.log");
+        let open_log = || {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)
+        };
+        let spawn = match (open_log(), open_log()) {
+            (Ok(stdout), Ok(stderr)) => std::process::Command::new(&bridge)
+                .arg("run")
+                .arg("--app-server")
+                .arg(&program)
+                .stdout(stdout)
+                .stderr(stderr)
+                .stdin(std::process::Stdio::null())
+                .spawn(),
+            _ => std::process::Command::new(&bridge)
+                .arg("run")
+                .arg("--app-server")
+                .arg(&program)
+                .stdin(std::process::Stdio::null())
+                .spawn(),
+        };
+        match spawn {
+            Ok(_child) => {
+                // Give the daemon a beat to write its state file so the
+                // pane flips to 「运行中」 on the reload.
+                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                let data = codex_gui_core::read_panel(&home, |pid| {
+                    std::path::Path::new(&format!("/proc/{pid}")).exists()
+                });
+                Message::WeixinPanelLoaded(Ok(data))
+            }
+            Err(error) => Message::WeixinPanelLoaded(Err(format!("启动桥接失败: {error}"))),
+        }
     })
 }
 

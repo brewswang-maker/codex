@@ -31,3 +31,19 @@ iced 0.14.0 fixed related text damage (#2964) and buffer presentation
 (#3032) issues, but both problems still reproduce on this stack
 (GNOME/Mutter, softbuffer, `--software-rendering`). Re-check whether
 the patches are still needed when bumping iced past 0.14.
+
+Checked 2026-10-05 against upstream `master` @ e0c7739 (reference
+clone at `~/workshop/rust/iced-upstream`, `git pull` it to refresh):
+
+- Patch 1 (damage): **not fixed upstream**. `present()` on master
+  still trusts `buffer.age()` + `damage::diff` (window/compositor.rs),
+  so this patch must be kept regardless of release cadence.
+- Patch 2 (editor clip): **fixed on upstream master** — the
+  `Text::Editor` branch now unconditionally calls `adjust_clip_mask`,
+  semantically equivalent to our patch. However no crates.io release
+  contains it yet (`iced_tiny_skia` 0.14.1 still ships the buggy
+  `editor.bounds` viewport shortcut). Drop Patch 2 (and eventually the
+  whole vendor) once a released iced line includes the master fix.
+- Yesterday's `capture_event` fix in `widget/src/text_editor.rs`
+  (ee54913) is an event-layer change unrelated to these two render
+  patches.

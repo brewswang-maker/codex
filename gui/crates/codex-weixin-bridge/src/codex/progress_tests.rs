@@ -1,7 +1,11 @@
 //! Tests for notification-to-text shaping; protocol items are built through
 //! their serde wire shape so the assertions also pin the expected payloads.
+#![allow(clippy::expect_used)]
 
-use super::{clean_for_wechat, describe_duration, final_reply, strip_inline_markup, summarize_item};
+use super::{
+    clean_for_wechat, describe_duration, final_reply, split_weixin_actions, strip_inline_markup,
+    summarize_item,
+};
 use codex_app_server_protocol::{ThreadItem, Turn};
 use serde_json::json;
 
@@ -126,6 +130,41 @@ fn cleanup_clamps_length() {
 #[test]
 fn inline_markup_strip_keeps_plain_brackets() {
     assert_eq!(strip_inline_markup("[text](https://x.y)"), "text");
-    assert_eq!(strip_inline_markup("plain [not a link] here"), "plain [not a link] here");
+    assert_eq!(
+        strip_inline_markup("plain [not a link] here"),
+        "plain [not a link] here"
+    );
     assert_eq!(strip_inline_markup("**bold** and `code`"), "bold and code");
+}
+
+#[test]
+fn actions_split_extracts_send_lines_and_keeps_body() {
+    let reply = "已生成两张图：\n```codex-weixin-actions\nsend /tmp/out/a.png\n\"/tmp/out/b.pdf\"\n```\n完成。";
+    let (body, actions) = split_weixin_actions(reply);
+    assert_eq!(body, "已生成两张图：\n完成。");
+    assert_eq!(actions, vec!["/tmp/out/a.png", "/tmp/out/b.pdf"]);
+}
+
+#[test]
+fn actions_split_bare_paths_and_multiple_blocks() {
+    let reply = "```codex-weixin-actions\n/tmp/a.png\n```\n中间文本\n```codex-weixin-actions\nsend /tmp/b.mp4\n```";
+    let (body, actions) = split_weixin_actions(reply);
+    assert_eq!(body, "中间文本");
+    assert_eq!(actions, vec!["/tmp/a.png", "/tmp/b.mp4"]);
+}
+
+#[test]
+fn actions_split_noop_without_fence() {
+    let (body, actions) = split_weixin_actions("普通回复\n```rust\nfn x() {}\n```");
+    assert_eq!(actions, Vec::<String>::new());
+    assert!(body.contains("普通回复"));
+    // Rust fences survive (they are not actions blocks).
+    assert!(body.contains("fn x() {}"));
+}
+
+#[test]
+fn actions_split_ignores_blank_lines_inside_block() {
+    let (body, actions) = split_weixin_actions("```codex-weixin-actions\n\nsend /a.png\n\n```");
+    assert_eq!(body, "");
+    assert_eq!(actions, vec!["/a.png"]);
 }

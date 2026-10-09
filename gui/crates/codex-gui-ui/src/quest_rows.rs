@@ -64,6 +64,12 @@ fn row_button<'a>(state: &'a State, thread: &'a ThreadSummary, now: i64) -> Elem
     button(
         row![
             activity_dot(status_color(thread.status)),
+            // WeChat-originated quests carry the same badge as the sidebar.
+            if thread.from_weixin {
+                crate::sessions_view::weixin_badge()
+            } else {
+                Space::new().width(0.0).height(0.0).into()
+            },
             // The ellipsis budget is a guess; the clip guarantees the
             // oversized label never paints over the badge and age.
             container(label).width(Fill).clip(true),

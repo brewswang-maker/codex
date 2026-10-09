@@ -15,11 +15,14 @@ use codex_gui_core::GitInfo;
 use codex_gui_core::SessionHistory;
 use codex_gui_core::SettingField;
 use codex_gui_core::SkillsTab;
+use codex_gui_core::WeixinPanelData;
 use iced::widget::markdown;
 use iced::widget::text_editor;
 use iced_swdir_tree::DirectoryTreeEvent;
 use serde_json::Value;
 use std::path::PathBuf;
+
+use crate::weixin_binding::BindingEvent;
 
 /// Which sidebar pane the activity bar shows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +43,8 @@ pub enum SidebarTab {
     Remote,
     /// The extensions pane.
     Extensions,
+    /// The WeChat bridge pane.
+    Weixin,
 }
 
 /// Which shell the window shows: the editor chrome or the Quest layout.
@@ -380,6 +385,26 @@ pub enum Message {
     SkillDeleteConfirmed(String),
     /// A skill disk mutation settled; `Ok` carries the success text.
     SkillMutationSettled(Result<String, String>),
+    /// The WeChat bridge pane's file projection settled.
+    WeixinPanelLoaded(Result<WeixinPanelData, String>),
+    /// The user granted a pending WeChat contact from the panel.
+    WeixinAllowContact(String),
+    /// The user asked to bind WeChat from the pane.
+    WeixinBindingStart,
+    /// The in-GUI binding flow surfaced progress or a terminal outcome.
+    WeixinBindingEvent(BindingEvent),
+    /// The user typed into the WeChat verify-code box.
+    WeixinVerifyCodeChanged(String),
+    /// The user submitted the typed verify code.
+    WeixinVerifyCodeSubmitted,
+    /// The user cancelled the in-GUI binding flow.
+    WeixinBindingCancel,
+    /// The user dismissed a settled binding view.
+    WeixinBindingDismiss,
+    /// The user asked to spawn the bridge daemon from the pane.
+    WeixinDaemonStart,
+    /// The pane poll tick: re-read the bridge's on-disk projection.
+    WeixinPanelRefresh,
     /// A `plugin/list` response arrived for the market tab.
     SkillMarketLoaded(Result<PluginListResponse, Error>),
     /// The user expanded or collapsed one market plugin's detail.

@@ -97,6 +97,27 @@ fn remove_drops_only_the_matching_thread() {
 }
 
 #[test]
+fn ensure_current_inserts_placeholder_for_a_threadless_id() {
+    let mut sessions = Sessions::default();
+    sessions.apply_list(&list_response(vec![thread_json("old", "previous")], None));
+
+    assert!(sessions.ensure_current("new", "/tmp", 7));
+
+    // Newest first so the current quest sits at the top of its group.
+    let ids: Vec<_> = sessions.threads().iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["new", "old"]);
+    let placeholder = &sessions.threads()[0];
+    assert_eq!(placeholder.cwd, "/tmp");
+    assert_eq!(placeholder.status, QuestStatus::Idle);
+    assert_eq!(placeholder.updated_at, 7);
+
+    // A second call is a no-op once the row exists (e.g. the real list
+    // already carries it after the first turn).
+    assert!(!sessions.ensure_current("new", "/tmp", 8));
+    assert_eq!(sessions.threads().len(), 2);
+}
+
+#[test]
 fn session_history_projection_carries_id_and_turns() {
     let thread = thread_json("thread-9", "history");
     let resume: ThreadResumeResponse = serde_json::from_value(json!({
@@ -156,6 +177,7 @@ fn organized_sidebar_partitions_pinned_and_filters_blanks() {
             cwd: String::from("/repo/a"),
             status: QuestStatus::Idle,
             name: None,
+            from_weixin: false,
         },
         ThreadSummary {
             id: String::from("t2"),
@@ -164,6 +186,7 @@ fn organized_sidebar_partitions_pinned_and_filters_blanks() {
             cwd: String::from("/repo/b"),
             status: QuestStatus::Idle,
             name: None,
+            from_weixin: false,
         },
         ThreadSummary {
             id: String::from("t3"),
@@ -172,6 +195,7 @@ fn organized_sidebar_partitions_pinned_and_filters_blanks() {
             cwd: String::from("/repo/a"),
             status: QuestStatus::Idle,
             name: None,
+            from_weixin: false,
         },
     ];
 

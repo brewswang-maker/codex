@@ -23,6 +23,7 @@ use codex_gui_core::PluginMarket;
 use codex_gui_core::QuestionDraft;
 use codex_gui_core::Questions;
 use codex_gui_core::RecentProjects;
+use codex_gui_core::ScheduledTask;
 use codex_gui_core::Scheduler;
 use codex_gui_core::Sessions;
 use codex_gui_core::Settings;
@@ -30,6 +31,7 @@ use codex_gui_core::SkillsBoard;
 use codex_gui_core::StatusBoard;
 use codex_gui_core::Transcript;
 use codex_gui_core::VendorCatalog;
+use codex_gui_core::WeixinPanelData;
 use iced::widget::markdown;
 use iced::widget::text_editor;
 use iced_swdir_tree::DirectoryTree;
@@ -378,6 +380,12 @@ pub struct State {
     /// The backend's `CODEX_HOME`, reported by `initialize`; the Skills
     /// page's disk mutations live under it.
     pub codex_home: Option<PathBuf>,
+    /// The WeChat bridge pane's latest file projection; `None` until the
+    /// pane is first opened (or after a failed read).
+    pub weixin: Option<WeixinPanelData>,
+    /// The live in-GUI WeChat binding session; `None` while the pane
+    /// shows its normal three sections.
+    pub weixin_binding: Option<crate::weixin_binding::WeixinBinding>,
     /// Image attachments dropped or picked, pending the next submission.
     pub attachments: Attachments,
     /// Directory tree of the Files sidebar, rooted at the working directory.
@@ -489,6 +497,9 @@ pub struct State {
     pub approval_policy: codex_gui_core::ApprovalPolicy,
     /// Scheduled tasks driving future composer submissions.
     pub scheduler: Scheduler,
+    /// Fired tasks waiting for their own project's conversation to open;
+    /// in-memory only, retried on every tick (see `run_due_scheduled`).
+    pub scheduler_pending: Vec<ScheduledTask>,
     /// Persisted knowledge base behind the knowledge panel.
     pub knowledge: KnowledgeBase,
     /// Installed cdylib-plugin registry behind the plugin market.
@@ -1014,6 +1025,8 @@ impl State {
             settings: Settings::default(),
             skills: SkillsBoard::default(),
             codex_home: None,
+            weixin: None,
+            weixin_binding: None,
             attachments: Attachments::default(),
             tree: DirectoryTree::new(
                 std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
@@ -1064,6 +1077,7 @@ impl State {
             shift_down: false,
             approval_policy: codex_gui_core::ApprovalPolicy::load_or_default(),
             scheduler: Scheduler::load_or_default(),
+            scheduler_pending: Vec::new(),
             knowledge: KnowledgeBase::load_or_default(),
             plugin_market: PluginMarket::load_or_default(),
             harness: HarnessBoard::load_or_default(),

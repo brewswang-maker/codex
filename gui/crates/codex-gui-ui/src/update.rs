@@ -171,14 +171,9 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::Tick => {
             let mut flow = flush_stream(state);
-            // Due scheduled tasks submit themselves through the normal
-            // composer path, one after another.
-            for task in update_boards::tick_boards(state) {
-                state.set_composer(task.prompt);
-                if state.can_submit() {
-                    flow = flow.chain(dispatch(state, Message::Submit));
-                }
-            }
+            // Due scheduled tasks run only inside their own project's
+            // conversation; anything else waits in the pending queue.
+            flow = flow.chain(run_due_scheduled(state));
             flow
         }
         Message::ApprovalDecided {
@@ -229,6 +224,13 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
         Message::SessionsLoaded(result) => match result {
             Ok(response) => {
                 state.sessions.apply_list(&response);
+                // `thread/list` omits the just-started thread (no rollout
+                // yet); keep its placeholder so the current quest never
+                // vanishes behind the previous one.
+                if let Some(thread_id) = state.thread_id.clone() {
+                    let cwd = state.status_board.cwd().unwrap_or_default().to_string();
+                    state.sessions.ensure_current(&thread_id, &cwd, now_secs());
+                }
                 Task::none()
             }
             Err(error) => {
@@ -1048,12 +1050,71 @@ fn dispatch(state: &mut State, message: Message) -> Task<Message> {
             } else {
                 Task::none()
             };
+            // The WeChat pane re-reads the bridge's runtime files on every
+            // open so the liveness and pending lists stay fresh.
+            let weixin = if tab == SidebarTab::Weixin {
+                commands::load_weixin_panel(state)
+            } else {
+                Task::none()
+            };
             // Leaving the workspace search restores the full tree view.
             if tab != SidebarTab::Search {
                 state.tree.clear_search();
             }
-            probe
+            Task::batch([probe, weixin])
         }
+        Message::WeixinPanelLoaded(Ok(data)) => {
+            state.weixin = Some(data);
+            Task::none()
+        }
+        Message::WeixinPanelLoaded(Err(error)) => {
+            tracing::warn!(%error, "weixin panel read failed");
+            state.weixin = None;
+            Task::none()
+        }
+        Message::WeixinAllowContact(contact) => commands::allow_weixin_contact(state, contact),
+        Message::WeixinBindingStart => commands::start_weixin_binding(state),
+        Message::WeixinBindingEvent(event) => {
+            let Some(binding) = state.weixin_binding.as_mut() else {
+                return Task::none();
+            };
+            let finished = matches!(event, crate::weixin_binding::BindingEvent::Finished(_));
+            crate::weixin_binding::apply_event(binding, event);
+            // A saved account flips the pane's liveness card; reload it.
+            if finished {
+                commands::load_weixin_panel(state)
+            } else {
+                Task::none()
+            }
+        }
+        Message::WeixinVerifyCodeChanged(code) => {
+            if let Some(binding) = state.weixin_binding.as_mut() {
+                binding.verify_input = code;
+            }
+            Task::none()
+        }
+        Message::WeixinVerifyCodeSubmitted => {
+            if let Some(binding) = state.weixin_binding.as_ref() {
+                binding.submit_verify_code();
+            }
+            Task::none()
+        }
+        Message::WeixinBindingCancel => {
+            if let Some(binding) = state.weixin_binding.take() {
+                // Dropping the session drops the login future via the
+                // oneshot signal; no orphaned poller survives.
+                if let Some(stop) = binding.stop {
+                    let _ignored = stop.send(());
+                }
+            }
+            Task::none()
+        }
+        Message::WeixinBindingDismiss => {
+            state.weixin_binding = None;
+            Task::none()
+        }
+        Message::WeixinDaemonStart => commands::start_weixin_daemon(state),
+        Message::WeixinPanelRefresh => commands::load_weixin_panel(state),
         Message::CopyMessage { key, text } => {
             state.copied_key = Some(key.clone());
             Task::batch([
@@ -1931,6 +1992,44 @@ fn confirm_cwd(state: &mut State, cwd: String) -> Task<Message> {
     commands::refresh_git(cwd)
 }
 
+/// Runs the due scheduled tasks that belong to the open conversation's
+/// project. A fired task whose project does not match, or whose moment
+/// is busy (no ready conversation, or the user is drafting), waits in
+/// the in-memory pending queue and retries on later ticks — never
+/// leaking into another project's conversation and never clobbering the
+/// composer draft. Tasks without a project (legacy or orphaned) drop
+/// instead of firing anywhere.
+fn run_due_scheduled(state: &mut State) -> Task<Message> {
+    let mut flow = Task::none();
+    for task in update_boards::tick_boards(state) {
+        // A recurring task that fires again while its previous run is
+        // still pending replaces that pending entry.
+        state
+            .scheduler_pending
+            .retain(|pending| pending.id != task.id);
+        state.scheduler_pending.push(task);
+    }
+    let conversation_ready = state.client.is_some()
+        && state.thread_id.is_some()
+        && matches!(state.status, Status::Ready);
+    let drafting = !state.composer.trim().is_empty() || !state.attachments.images.is_empty();
+    let current_cwd = state.status_board.cwd().map(str::to_owned);
+    let waiting = std::mem::take(&mut state.scheduler_pending);
+    for task in waiting {
+        let in_project =
+            matches!((&task.project, &current_cwd), (Some(project), Some(cwd)) if project == cwd);
+        if task.project.is_none() {
+            tracing::warn!(task = %task.name, "定时任务未绑定项目，跳过执行");
+        } else if in_project && conversation_ready && !drafting {
+            state.set_composer(task.prompt.clone());
+            flow = flow.chain(dispatch(state, Message::Submit));
+        } else {
+            state.scheduler_pending.push(task);
+        }
+    }
+    flow
+}
+
 /// Answers every question of the head request at once and drops its
 /// drafts; empty answers are legal and let the server auto-resolve.
 fn answer_questions(state: &mut State) -> Task<Message> {
@@ -2241,15 +2340,26 @@ fn on_event(state: &mut State, event: GuiEvent) -> Task<Message> {
                     state.token_usage = Some(usage.token_usage.clone());
                 }
             }
-            // A finished turn reopens the composer no matter how it ended;
-            // `submit` closed it with `Status::Thinking` and only this
-            // notification marks the end of the turn lifecycle.
+            // The first turn gives the thread a rollout, so it now shows
+            // up in `thread/list`; pull the real metadata over the
+            // placeholder row.
             if let ServerNotification::TurnStarted(started) = &notification
                 && Some(&started.thread_id) == state.thread_id.as_ref()
             {
                 // Remember the live turn so the stop button can interrupt it.
                 state.active_turn = Some(started.turn.id.clone());
+                let listed = state
+                    .sessions
+                    .threads()
+                    .iter()
+                    .any(|thread| thread.id == started.thread_id);
+                if !listed {
+                    refresh = Task::batch([refresh, commands::load_sessions(state)]);
+                }
             }
+            // A finished turn reopens the composer no matter how it ended;
+            // `submit` closed it with `Status::Thinking` and only this
+            // notification marks the end of the turn lifecycle.
             if let ServerNotification::TurnCompleted(completed) = &notification
                 && Some(&completed.thread_id) == state.thread_id.as_ref()
                 && completed.turn.status != TurnStatus::InProgress
@@ -2385,6 +2495,14 @@ fn on_bootstrap(state: &mut State, step: Bootstrap) -> Task<Message> {
                 .map(|cwd| confirm_cwd(state, cwd.to_string()))
                 .unwrap_or_else(Task::none);
             state.status = Status::Ready;
+            // A fresh thread has no rollout, so `thread/list` will not carry
+            // it; show a placeholder row immediately so the new quest is
+            // visible and highlighted instead of appearing to merge into the
+            // previous task.
+            if let Some(thread_id) = state.thread_id.clone() {
+                let cwd = result["cwd"].as_str().unwrap_or_default();
+                state.sessions.ensure_current(&thread_id, cwd, now_secs());
+            }
             confirmed
         }
         Bootstrap::ThreadStarted(Err(error)) => {

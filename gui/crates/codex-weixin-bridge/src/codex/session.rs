@@ -13,7 +13,8 @@ use std::path::{Path, PathBuf};
 use codex_app_server_protocol::{
     AskForApproval, ClientInfo, ClientRequest, InitializeCapabilities, InitializeParams,
     SandboxMode, SortDirection, ThreadResumeInitialTurnsPageParams, ThreadResumeParams,
-    ThreadStartParams, TurnInterruptParams, TurnItemsView, TurnStartParams, UserInput,
+    ThreadSource, ThreadStartParams, TurnInterruptParams, TurnItemsView, TurnStartParams,
+    UserInput,
 };
 use codex_gui_bridge::{Client, Flags, GuiEvent};
 use serde::{Deserialize, Serialize};
@@ -59,7 +60,10 @@ impl SessionStore {
     }
 
     pub fn thread_for(&self, contact: &str) -> Option<&str> {
-        self.file.contacts.get(contact).map(|r| r.thread_id.as_str())
+        self.file
+            .contacts
+            .get(contact)
+            .map(|r| r.thread_id.as_str())
     }
 
     /// Binds (or rebinds) a contact and persists immediately.
@@ -107,10 +111,16 @@ pub struct CodexBridge {
 
 impl CodexBridge {
     /// Spawns `codex app-server` and completes the `initialize` handshake.
+    /// `app_server` overrides the backend binary; `None` resolves `codex`
+    /// from `PATH`.
     /// Returns the handle plus the event stream (notifications, approvals,
     /// disconnects).
-    pub async fn connect() -> Result<(Self, mpsc::Receiver<GuiEvent>)> {
-        let (client, events) = codex_gui_bridge::start(Flags::default_app_server()).await?;
+    pub async fn connect(app_server: Option<PathBuf>) -> Result<(Self, mpsc::Receiver<GuiEvent>)> {
+        let mut flags = Flags::default_app_server();
+        if let Some(program) = app_server {
+            flags.program = program;
+        }
+        let (client, events) = codex_gui_bridge::start(flags).await?;
         client
             .call(|request_id| ClientRequest::Initialize {
                 request_id,
@@ -130,25 +140,29 @@ impl CodexBridge {
         Ok((Self { client }, events))
     }
 
-    /// Opens a fresh thread; returns its id from `thread.id`.
-    pub async fn start_thread(&self, cwd: Option<String>) -> Result<String> {
+    /// Opens a fresh thread; returns its id from `thread.id`. `model` pins
+    /// the thread to a `/model` pick (applies for the thread's lifetime).
+    pub async fn start_thread(&self, cwd: Option<String>, model: Option<String>) -> Result<String> {
         let value = self
             .client
             .call(|request_id| ClientRequest::ThreadStart {
                 request_id,
                 params: ThreadStartParams {
                     cwd,
+                    model,
                     // Mirrors the GUI posture: workspace edits flow without
                     // per-file prompts, anything outside still asks.
                     approval_policy: Some(AskForApproval::OnRequest),
                     sandbox: Some(SandboxMode::WorkspaceWrite),
+                    // Marks the thread as WeChat-originated so the GUI can
+                    // badge it and the Quest rail can group it.
+                    thread_source: Some(ThreadSource::Feature("weixin".to_string())),
                     ..ThreadStartParams::default()
                 },
             })
             .await?;
-        thread_id_from(&value).ok_or_else(|| {
-            BridgeError::Other("thread/start 响应缺少 thread.id".to_string())
-        })
+        thread_id_from(&value)
+            .ok_or_else(|| BridgeError::Other("thread/start 响应缺少 thread.id".to_string()))
     }
 
     /// Reattaches to a persisted thread with the same approval posture as a

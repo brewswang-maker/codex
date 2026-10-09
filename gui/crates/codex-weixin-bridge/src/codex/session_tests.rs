@@ -1,4 +1,5 @@
 //! Tests for the persisted contact-to-thread mapping.
+#![allow(clippy::expect_used)]
 
 use super::SessionStore;
 
@@ -53,7 +54,9 @@ fn corrupt_file_degrades_to_empty_and_recovers() {
     let mut store = SessionStore::load(dir.path());
     assert_eq!(store.thread_for("anyone"), None);
     // A fresh bind still works after the corrupted load.
-    store.bind("anyone", "thread-x").expect("bind after corrupt");
+    store
+        .bind("anyone", "thread-x")
+        .expect("bind after corrupt");
     let reloaded = SessionStore::load(dir.path());
     assert_eq!(reloaded.thread_for("anyone"), Some("thread-x"));
 }

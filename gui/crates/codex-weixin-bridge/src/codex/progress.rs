@@ -23,9 +23,7 @@ pub fn summarize_item(item: &ThreadItem) -> Option<String> {
             let paths: Vec<String> = changes.iter().map(|c| c.path.clone()).collect();
             Some(format!("✎ {}", paths.join(", ")))
         }
-        ThreadItem::McpToolCall { server, tool, .. } => {
-            Some(format!("· {server}:{tool}"))
-        }
+        ThreadItem::McpToolCall { server, tool, .. } => Some(format!("· {server}:{tool}")),
         _ => None,
     }
 }
@@ -54,6 +52,48 @@ pub fn describe_duration(duration_ms: Option<i64>) -> String {
         }
         None => String::new(),
     }
+}
+
+/// Fence tag marking native media deliveries inside a final reply.
+const ACTIONS_FENCE_TAG: &str = "codex-weixin-actions";
+
+/// Split ```` ```codex-weixin-actions ```` fenced blocks out of a final
+/// reply. Each block line is one local file path, optionally prefixed with
+/// `send `; the bridge uploads each file and delivers it as a native WeChat
+/// media message. Returns the reply text with the blocks removed plus the
+/// extracted paths in order.
+pub fn split_weixin_actions(text: &str) -> (String, Vec<String>) {
+    let mut body = String::with_capacity(text.len());
+    let mut actions = Vec::new();
+    let mut in_block = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if in_block {
+            if trimmed.starts_with("```") {
+                in_block = false;
+            } else if let Some(path) = trimmed.strip_prefix("send ").map(str::trim) {
+                let path = path.trim_matches('"').trim_matches('\'');
+                if !path.is_empty() {
+                    actions.push(path.to_string());
+                }
+            } else if !trimmed.is_empty() {
+                actions.push(trimmed.trim_matches('"').trim_matches('\'').to_string());
+            }
+            continue;
+        }
+        if trimmed.starts_with("```")
+            && trimmed
+                .trim_start_matches('`')
+                .trim()
+                .starts_with(ACTIONS_FENCE_TAG)
+        {
+            in_block = true;
+            continue;
+        }
+        body.push_str(line);
+        body.push('\n');
+    }
+    (body.trim().to_string(), actions)
 }
 
 /// Reply length cap: WeChat renders long bubbles poorly, so a truncated

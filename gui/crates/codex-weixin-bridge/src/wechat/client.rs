@@ -11,14 +11,30 @@ use serde::Serialize;
 
 use crate::error::{BridgeError, Result};
 use crate::wechat::types::{
-    BaseInfo, GetConfigResp, GetUpdatesResp, NotifyStartResp, NotifyStopResp, QrCodeResponse,
-    QrStatus, QrStatusResponse, SendMessageResp, WeixinMessage,
+    BaseInfo, GetConfigResp, GetUpdatesResp, GetUploadUrlResp, NotifyStartResp, NotifyStopResp,
+    QrCodeResponse, QrStatus, QrStatusResponse, SendMessageResp, WeixinMessage, typing_status,
 };
 
 const ILINK_APP_ID: &str = "bot";
 const DEFAULT_LONG_POLL_TIMEOUT: Duration = Duration::from_secs(35);
 const DEFAULT_API_TIMEOUT: Duration = Duration::from_secs(15);
 const DEFAULT_CONFIG_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Original-file fields for [`WeixinClient::get_upload_url`] (proto:
+/// GetUploadUrlReq; thumbnails are not used by bot uploads).
+pub struct UploadUrlRequest<'a> {
+    pub filekey: &'a str,
+    pub media_type: i64,
+    pub to_user_id: &'a str,
+    /// Plaintext byte count.
+    pub rawsize: usize,
+    /// Plaintext MD5 as hex.
+    pub rawfilemd5: &'a str,
+    /// Ciphertext byte count (PKCS7 padded).
+    pub filesize: usize,
+    /// Raw AES key as hex.
+    pub aeskey_hex: &'a str,
+}
 
 /// Encode a semver string as the wire's uint32 `0x00MMNNPP` layout.
 pub fn client_version_u32(version: &str) -> u32 {
@@ -222,6 +238,47 @@ impl WeixinClient {
         }
     }
 
+    /// Shared HTTP client for CDN media transfer (media.rs).
+    pub fn http(&self) -> &reqwest::Client {
+        &self.http
+    }
+
+    /// Request a pre-signed CDN upload URL (proto: GetUploadUrlReq). Only
+    /// original-file fields are sent; bot uploads need no thumbnail.
+    pub async fn get_upload_url(&self, req: UploadUrlRequest<'_>) -> Result<GetUploadUrlResp> {
+        #[derive(serde::Serialize)]
+        struct Body<'a> {
+            filekey: &'a str,
+            media_type: i64,
+            to_user_id: &'a str,
+            rawsize: usize,
+            rawfilemd5: &'a str,
+            filesize: usize,
+            no_need_thumb: bool,
+            aeskey: &'a str,
+            base_info: BaseInfo,
+        }
+        let text = self
+            .post_raw(
+                &self.base_url,
+                "ilink/bot/getuploadurl",
+                Body {
+                    filekey: req.filekey,
+                    media_type: req.media_type,
+                    to_user_id: req.to_user_id,
+                    rawsize: req.rawsize,
+                    rawfilemd5: req.rawfilemd5,
+                    filesize: req.filesize,
+                    no_need_thumb: true,
+                    aeskey: req.aeskey_hex,
+                    base_info: self.base_info(),
+                },
+                DEFAULT_API_TIMEOUT,
+            )
+            .await?;
+        Ok(serde_json::from_str(&text)?)
+    }
+
     /// Send one message and return the server-assigned id.
     pub async fn send_message(&self, msg: WeixinMessage) -> Result<SendMessageResp> {
         let body = SendMessageBody {
@@ -245,6 +302,30 @@ impl WeixinClient {
             });
         }
         Ok(resp)
+    }
+
+    /// Send one message after the conversation prepare/typing dance the
+    /// live channel expects: `getconfig` for the typing ticket, typing
+    /// start, the message itself, then typing cancel. Ticket failures are
+    /// logged and skipped - they must never block the message itself.
+    pub async fn send_prepared(&self, msg: WeixinMessage) -> Result<SendMessageResp> {
+        let to = msg.to_user_id.clone().unwrap_or_default();
+        let context_token = msg.context_token.clone();
+        let ticket = match self.get_config(&to, context_token.as_deref()).await {
+            Ok(config) => config.typing_ticket,
+            Err(err) => {
+                tracing::warn!(to, %err, "getconfig 失败，跳过 typing 直接发送");
+                None
+            }
+        };
+        if let Some(ticket) = ticket.as_deref() {
+            let _ignored = self.send_typing(&to, ticket, typing_status::TYPING).await;
+        }
+        let result = self.send_message(msg).await;
+        if let Some(ticket) = ticket.as_deref() {
+            let _ignored = self.send_typing(&to, ticket, typing_status::CANCEL).await;
+        }
+        result
     }
 
     /// Fetch bot config (contains the typing ticket) for one conversation.

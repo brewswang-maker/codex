@@ -211,13 +211,18 @@ const FALLBACK_LIMIT: usize = 80;
 
 /// Localizes one skill's picker description.
 ///
-/// Known skills render the Chinese one-liner; anything else keeps a
-/// condensed form of the wire description (`""` stays `""`).
+/// Known skills render the Chinese one-liner; anything else then tries the
+/// generated catalog (`plugin_i18n`, covering marketplace skills and
+/// standalone user/repo skills); unknown names keep a condensed form of the
+/// wire description (`""` stays `""`).
 pub fn localize(name: &str, description: &str) -> String {
-    match CHINESE_SKILLS.iter().find(|(skill, _)| *skill == name) {
-        Some((_, chinese)) => chinese.to_string(),
-        None => condense(description),
+    if let Some((_, chinese)) = CHINESE_SKILLS.iter().find(|(skill, _)| *skill == name) {
+        return chinese.to_string();
     }
+    if let Some((_, chinese)) = crate::plugin_i18n::skill_copy(name) {
+        return chinese.to_string();
+    }
+    condense(description)
 }
 
 /// Collapses one wire description into a single short line: whitespace is

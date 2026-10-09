@@ -191,11 +191,17 @@ pub enum LoginOutcome {
 }
 
 /// Run the interactive QR login until confirmed, expired out, or timed out.
+///
+/// `read_verify_code` returns a boxed future instead of an `AsyncFnMut`
+/// closure: boxing keeps the future's `Send` bound concrete, which generic
+/// async closures cannot express without tripping rustc's HRTB inference.
 pub async fn run_login(
     client: &WeixinClient,
     timeout: Duration,
     mut on_event: impl FnMut(LoginEvent),
-    mut read_verify_code: impl AsyncFnMut() -> String,
+    mut read_verify_code: impl FnMut() -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = String> + Send>,
+    >,
 ) -> LoginOutcome {
     let local_tokens: Vec<String> = Vec::new();
     let mut qr = match client

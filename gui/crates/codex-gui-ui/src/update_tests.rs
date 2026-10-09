@@ -1413,6 +1413,33 @@ fn thread_started_records_the_binding() {
 }
 
 #[test]
+fn thread_started_shows_the_new_quest_in_the_sidebar() {
+    // A fresh thread has no rollout, so `thread/list` omits it; the sidebar
+    // must still carry a row for it, or the new quest looks merged into the
+    // previous task.
+    let mut state = State::new(Flags::default_app_server());
+    seed_sessions(&mut state, vec![thread_json("old", "previous", "/tmp")]);
+
+    let _ = update(
+        &mut state,
+        Message::Bootstrap(Bootstrap::ThreadStarted(Ok(json!({
+            "thread": {"id": "thread-new"},
+            "model": "deepseek-flash",
+            "modelProvider": "deepseek",
+            "cwd": "/tmp"
+        })))),
+    );
+
+    let ids: Vec<_> = state
+        .sessions
+        .threads()
+        .iter()
+        .map(|thread| thread.id.as_str())
+        .collect();
+    assert_eq!(ids, ["thread-new", "old"]);
+}
+
+#[test]
 fn session_resumed_records_the_binding_and_status_model() {
     let mut state = State::new(Flags::default_app_server());
     let history = SessionHistory {
@@ -3926,4 +3953,92 @@ fn mcp_login_banner_tracks_the_completion_notification() {
     );
     let _ = update(&mut state, Message::McpLoginDismissed);
     assert!(state.mcp_login.is_none());
+}
+
+/// A due task bound to another project must not touch the open
+/// conversation (draft, submission) and instead waits in the pending
+/// queue for its own project. Regression: fired prompts used to leak
+/// into whichever project happened to be focused.
+#[test]
+fn fired_task_from_another_project_waits_instead_of_leaking() {
+    use codex_gui_core::ScheduleKind;
+    use codex_gui_core::ScheduledTask;
+
+    let mut state = State::new(Flags::default_app_server());
+    state
+        .scheduler
+        .set_save_path(std::env::temp_dir().join(format!(
+            "gui-update-test-scheduler-{}.json",
+            std::process::id()
+        )));
+    state.status = Status::Ready;
+    state.thread_id = Some("thread-current".to_string());
+    state.status_board.apply_cwd("/work/current".to_string());
+    state.set_composer("用户正在撰写的草稿".to_string());
+    state.scheduler.tasks.push(ScheduledTask {
+        id: "other-project".to_string(),
+        name: "报表".to_string(),
+        kind: ScheduleKind::Every { interval_secs: 300 },
+        prompt: "generate report".to_string(),
+        project: Some("/work/other".to_string()),
+        enabled: true,
+        last_run: None,
+        created_at: 0,
+    });
+
+    let _ = update(&mut state, Message::Tick);
+
+    assert_eq!(state.composer, "用户正在撰写的草稿", "draft untouched");
+    assert_eq!(
+        state
+            .scheduler_pending
+            .iter()
+            .map(|task| task.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["other-project"],
+        "the fired task waits for its own project"
+    );
+    let _ = std::fs::remove_file(std::env::temp_dir().join(format!(
+        "gui-update-test-scheduler-{}.json",
+        std::process::id()
+    )));
+}
+
+/// A fired task without a project binding never runs anywhere: it is
+/// dropped with a warning instead of polluting every conversation it
+/// happens to land in.
+#[test]
+fn fired_task_without_project_is_dropped() {
+    use codex_gui_core::ScheduleKind;
+    use codex_gui_core::ScheduledTask;
+
+    let mut state = State::new(Flags::default_app_server());
+    state
+        .scheduler
+        .set_save_path(std::env::temp_dir().join(format!(
+            "gui-update-test-scheduler-orphan-{}.json",
+            std::process::id()
+        )));
+    state.status = Status::Ready;
+    state.thread_id = Some("thread-current".to_string());
+    state.status_board.apply_cwd("/work/current".to_string());
+    state.scheduler.tasks.push(ScheduledTask {
+        id: "orphan".to_string(),
+        name: "遗留".to_string(),
+        kind: ScheduleKind::Every { interval_secs: 300 },
+        prompt: "patrol".to_string(),
+        project: None,
+        enabled: true,
+        last_run: None,
+        created_at: 0,
+    });
+
+    let _ = update(&mut state, Message::Tick);
+
+    assert!(state.composer.is_empty(), "nothing was submitted");
+    assert!(state.scheduler_pending.is_empty(), "orphan task dropped");
+    let _ = std::fs::remove_file(std::env::temp_dir().join(format!(
+        "gui-update-test-scheduler-orphan-{}.json",
+        std::process::id()
+    )));
 }

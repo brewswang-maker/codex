@@ -50,6 +50,7 @@ pub fn sidebar(state: &State) -> Element<'_, Message> {
         ),
         SidebarTab::Remote => ("远程资源管理器", crate::remote_view::panel(state)),
         SidebarTab::Extensions => ("扩展", extensions_body(state)),
+        SidebarTab::Weixin => ("微信桥", crate::weixin_view::panel(state)),
     };
 
     let header = text(title).size(theme::SIZE_MD).style(theme::fg);
@@ -297,6 +298,27 @@ fn group_label(label: &str) -> Element<'static, Message> {
         .into()
 }
 
+/// The WeChat-origin badge: a tiny outlined "微"， shared with the Quest
+/// rail so both lists mark chat-created threads the same way.
+pub(crate) fn weixin_badge() -> Element<'static, Message> {
+    container(text("微").size(theme::SIZE_XS).style(theme::dim))
+        .padding([1, 5])
+        .style(weixin_badge_surface)
+        .into()
+}
+
+/// The hairline pill behind the WeChat badge.
+fn weixin_badge_surface(_theme: &iced::Theme) -> iced::widget::container::Style {
+    iced::widget::container::Style {
+        border: iced::Border {
+            color: theme::BORDER,
+            width: 1.0,
+            radius: 5.0.into(),
+        },
+        ..iced::widget::container::Style::default()
+    }
+}
+
 /// The filter box well: hairline-bordered input surface (shared with the
 /// Quest rail's filter).
 pub(crate) fn filter_well(_theme: &iced::Theme) -> iced::widget::container::Style {
@@ -371,6 +393,14 @@ fn thread_row<'a>(state: &'a State, thread: &'a ThreadSummary, now: i64) -> Elem
         .style(theme::ghost_button)
         .on_press(Message::SessionArchived(thread.id.clone()));
 
+    // WeChat-originated threads lead with the badge so they are
+    // recognizable at a glance in the mixed list.
+    let mut leading = row![].spacing(6).align_y(alignment::Vertical::Center);
+    if thread.from_weixin {
+        leading = leading.push(weixin_badge());
+    }
+    leading = leading.push(container(label).width(Fill).clip(true));
+
     let mut trailing = row![].spacing(6).align_y(alignment::Vertical::Center);
     if active {
         let (added, removed) = state.transcript.diff_totals();
@@ -396,7 +426,7 @@ fn thread_row<'a>(state: &'a State, thread: &'a ThreadSummary, now: i64) -> Elem
     container(
         // Clip keeps an oversized one-line label from painting over the
         // trailing age, pin, and archive controls.
-        button(row![container(label).width(Fill).clip(true), trailing,])
+        button(row![leading, trailing,])
             .padding([8, 10])
             .style(theme::rail_button(active))
             .on_press(Message::SessionSelected(thread.id.clone()))

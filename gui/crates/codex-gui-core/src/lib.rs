@@ -30,6 +30,7 @@ mod skill_market;
 mod skills;
 mod status;
 mod transcript;
+mod weixin_files;
 
 #[cfg(test)]
 #[path = "approvals_tests.rs"]
@@ -187,3 +188,8 @@ pub use transcript::FileChangeRecord;
 pub use transcript::PlanStep;
 pub use transcript::Transcript;
 pub use transcript::TurnPlan;
+pub use weixin_files::PendingRow;
+pub use weixin_files::WEIXIN_BRIDGE_DIR;
+pub use weixin_files::WeixinPanelData;
+pub use weixin_files::grant_contact;
+pub use weixin_files::read_panel;

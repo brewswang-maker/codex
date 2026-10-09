@@ -1,4 +1,5 @@
 //! Wire-shape tests for the iLink protocol types.
+#![allow(clippy::expect_used)]
 
 use pretty_assertions::assert_eq;
 use serde_json::{Value, json};
@@ -7,7 +8,7 @@ use super::*;
 
 #[test]
 fn uint64_message_ids_survive_a_full_round_trip() {
-    // JS needs the quote-the-number trick; serde_json is exact up to u64::MAX.
+    // Legacy wire shape: bare proto uint64 numbers.
     let raw = r#"{
         "ret": 0,
         "msgs": [{
@@ -20,12 +21,12 @@ fn uint64_message_ids_survive_a_full_round_trip() {
     }"#;
     let resp: GetUpdatesResp = serde_json::from_str(raw).expect("parse should succeed");
     let message = resp.msgs.as_ref().and_then(|m| m.first()).expect("one msg");
-    assert_eq!(message.message_id, Some(u64::MAX));
+    assert_eq!(message.message_id.as_deref(), Some("18446744073709551615"));
     assert_eq!(
         message.item_list.as_ref().and_then(|i| i.first()),
         Some(&MessageItem {
             r#type: Some(item_type::TEXT),
-            msg_id: Some(9_007_199_254_740_993),
+            msg_id: Some("9007199254740993".to_string()),
             text_item: Some(TextItem {
                 text: Some("hi".to_string()),
             }),
@@ -34,6 +35,43 @@ fn uint64_message_ids_survive_a_full_round_trip() {
     );
     assert_eq!(message.text(), "hi");
     assert_eq!(resp.get_updates_buf.as_deref(), Some("cursor-blob"));
+}
+
+#[test]
+fn versioned_string_ids_from_the_live_channel_parse() {
+    // Regression for the first real-device long-poll: the live iLink channel
+    // emits `"v1:<snowflake>"` strings for id fields that used to be uint64
+    // numbers; the strict-u64 model rejected every response and the poll
+    // cursor never advanced.
+    let raw = r#"{
+        "ret": 0,
+        "msgs": [{
+            "seq": "v1:1084416962918958814",
+            "message_id": "v1:1084416962918958814",
+            "from_user_id": "o9cq80wfScLu7tFyJpw3TjmlQqAM@im.wechat",
+            "context_token": "ctx-2",
+            "item_list": [{"type": 1, "msg_id": "v1:1084416962918958815", "text_item": {"text": "列出当前目录的文件"}}]
+        }],
+        "get_updates_buf": "v1:cursor-blob"
+    }"#;
+    let resp: GetUpdatesResp = serde_json::from_str(raw).expect("live wire shape must parse");
+    let message = resp.msgs.as_ref().and_then(|m| m.first()).expect("one msg");
+    assert_eq!(
+        message.message_id.as_deref(),
+        Some("v1:1084416962918958814")
+    );
+    assert_eq!(
+        message.item_list.as_ref().and_then(|i| i.first()),
+        Some(&MessageItem {
+            r#type: Some(item_type::TEXT),
+            msg_id: Some("v1:1084416962918958815".to_string()),
+            text_item: Some(TextItem {
+                text: Some("列出当前目录的文件".to_string()),
+            }),
+            ..MessageItem::default()
+        })
+    );
+    assert_eq!(message.text(), "列出当前目录的文件");
 }
 
 #[test]

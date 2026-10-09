@@ -142,7 +142,7 @@ fn skill_card<'a>(state: &'a State, skill: &'a SkillRow) -> Element<'a, Message>
     let description = if skill.description.is_empty() {
         "（无描述）".to_string()
     } else {
-        skill.description.clone()
+        codex_gui_core::localize_skill_description(&skill.name, &skill.description)
     };
     let info = column![
         row![

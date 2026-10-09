@@ -1467,11 +1467,13 @@ dependencies = [
  "codex-gui-bridge",
  "codex-gui-core",
  "codex-utils-absolute-path",
+ "codex-weixin-bridge",
  "iced",
  "iced-swdir-tree",
  "iced_test",
  "insta",
  "pretty_assertions",
+ "qrcode",
  "rfd",
  "serde_json",
  "tempfile",
@@ -1879,11 +1881,13 @@ dependencies = [
 name = "codex-weixin-bridge"
 version = "0.1.0"
 dependencies = [
+ "aes",
  "base64 0.22.1",
  "clap",
  "codex-app-server-protocol",
  "codex-gui-bridge",
  "home",
+ "md-5",
  "pretty_assertions",
  "qrcode",
  "rand 0.8.8",

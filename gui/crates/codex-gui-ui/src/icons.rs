@@ -61,6 +61,8 @@ pub enum IconKind {
     Remote,
     /// Extensions rail entry (grid of squares).
     Extensions,
+    /// WeChat bridge rail entry (phone silhouette).
+    Weixin,
     /// Skills rail entry (a large sparkle with a small companion).
     Sparkle,
 }
@@ -254,6 +256,19 @@ impl<Message> canvas::Program<Message> for Icon {
                         stroke,
                     );
                 }
+            }
+            IconKind::Weixin => {
+                // A phone silhouette: rounded body, earpiece, home dot.
+                frame.stroke(
+                    &Path::rounded_rectangle(
+                        point(8.0, 3.5, k),
+                        Size::new(8.0 * k, 17.0 * k),
+                        (2.0 * k).into(),
+                    ),
+                    stroke,
+                );
+                frame.stroke(&line(10.5, 6.0, 13.5, 6.0, k), stroke);
+                frame.stroke(&Path::circle(point(12.0, 17.5, k), 1.0 * k), stroke);
             }
             IconKind::Sparkle => {
                 // A four-point sparkle plus a small companion star.

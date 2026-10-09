@@ -72,3 +72,33 @@ fn anthropic_agent_skills_resolve_by_wire_name() {
     assert_eq!(name, "文档技能");
     assert!(description.is_some_and(|text| text.contains("PDF")));
 }
+
+#[test]
+fn skill_rows_resolve_from_the_generated_skill_catalog() {
+    // Curated market skills localize via plugin_i18n_skills.tsv: the wire
+    // name is kept for mention syntax, the description turns Chinese.
+    let (name, description) = localize("figma:figma-code-connect", Some("English"));
+    assert_eq!(name, "figma:figma-code-connect");
+    assert!(description.is_some_and(|text| text.contains("Code Connect")));
+
+    let (_, description) = localize("ponytail:ponytail-review", None);
+    assert!(description.is_some_and(|text| text.contains("过度设计")));
+}
+
+#[test]
+fn single_skill_rows_fall_back_to_the_owning_plugin_entry() {
+    // Wrapped marketplace plugins ship one skill each; unknown skill names
+    // under a known plugin reuse the plugin's Chinese copy.
+    let (name, description) = localize("ably-automation:ably-automation", None);
+    assert_eq!(name, "Ably 自动化");
+    assert!(description.is_some_and(|text| text.contains("Ably")));
+
+    // Unknown plugins keep the wire name and description untouched.
+    assert_eq!(
+        localize("no-such-plugin:no-such-skill", Some("raw")),
+        (
+            "no-such-plugin:no-such-skill".to_string(),
+            Some("raw".to_string())
+        )
+    );
+}

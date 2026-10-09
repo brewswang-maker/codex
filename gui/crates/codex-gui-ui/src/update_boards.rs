@@ -179,7 +179,15 @@ pub(crate) fn boards_message(state: &mut State, message: BoardsMessage) -> Task<
                 return Task::none();
             }
             let label = kind.label();
-            state.scheduler.add(&name, kind, &prompt, now);
+            // Bind the task to the project currently open so it can only
+            // ever run in that project's conversation.
+            state.scheduler.add_in(
+                &name,
+                kind,
+                &prompt,
+                state.status_board.cwd().map(str::to_owned),
+                now,
+            );
             panel.notice = Some(PanelNotice::ok(format!("已创建任务 {name}（{label}）")));
             panel.draft_name.clear();
             panel.draft_delay.clear();

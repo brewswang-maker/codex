@@ -1,4 +1,5 @@
 //! Header and version-encoding tests for the iLink HTTP client.
+#![allow(clippy::expect_used)]
 
 use super::*;
 

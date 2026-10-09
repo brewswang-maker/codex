@@ -2,9 +2,26 @@
 //!
 //! Mirrors the TypeScript contract in openclaw-weixin's `api/types.ts`: JSON
 //! over HTTPS, proto-style snake_case field names, base64 strings for bytes
-//! fields, and uint64 identifiers that stay exact in Rust via `u64`.
+//! fields, and identifiers accepted in both uint64 and versioned-string wire
+//! shapes (normalized to `String`).
 
 use serde::{Deserialize, Serialize};
+
+/// Server IDs arrived as proto uint64 numbers historically, but the live
+/// iLink channel now emits versioned strings (`"v1:<snowflake>"`) for the
+/// same fields. Accept both wire shapes and normalize to the string form;
+/// a non-string non-number value deserializes as absent.
+fn deserialize_optional_id<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(match value {
+        Some(serde_json::Value::Number(number)) => Some(number.to_string()),
+        Some(serde_json::Value::String(text)) => Some(text),
+        _ => None,
+    })
+}
 
 /// Default API host for every iLink bot request.
 pub const DEFAULT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";
@@ -53,6 +70,14 @@ pub mod message_state {
 pub mod typing_status {
     pub const TYPING: i64 = 1;
     pub const CANCEL: i64 = 2;
+}
+
+/// proto: UploadMediaType values for `ilink/bot/getuploadurl`.
+pub mod upload_media_type {
+    pub const IMAGE: i64 = 1;
+    pub const VIDEO: i64 = 2;
+    pub const FILE: i64 = 3;
+    pub const VOICE: i64 = 4;
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -171,8 +196,12 @@ pub struct MessageItem {
     pub update_time_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_completed: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub msg_id: Option<u64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_id",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub msg_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ref_msg: Option<RefMessage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -187,14 +216,22 @@ pub struct MessageItem {
     pub video_item: Option<VideoItem>,
 }
 
-/// Unified message (proto: WeixinMessage). `message_id` is proto uint64 and
-/// stays exact in Rust as `u64` (JS needs a string workaround; we do not).
+/// Unified message (proto: WeixinMessage). `seq`/`message_id` accept both
+/// the proto uint64 wire shape and the live channel's versioned strings.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct WeixinMessage {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub seq: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub message_id: Option<u64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_id",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub seq: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_id",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub message_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from_user_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -246,6 +283,26 @@ impl WeixinMessage {
                     ..MessageItem::default()
                 }])
             },
+            context_token: context_token.map(str::to_string),
+            ..WeixinMessage::default()
+        }
+    }
+
+    /// Build an outbound bot message carrying one pre-built media item
+    /// (image/video/file); mirrors the per-item sends in `send.ts`.
+    pub fn media_reply(
+        to: &str,
+        item: MessageItem,
+        context_token: Option<&str>,
+        client_id: &str,
+    ) -> Self {
+        Self {
+            from_user_id: Some(String::new()),
+            to_user_id: Some(to.to_string()),
+            client_id: Some(client_id.to_string()),
+            message_type: Some(message_type::BOT),
+            message_state: Some(message_state::FINISH),
+            item_list: Some(vec![item]),
             context_token: context_token.map(str::to_string),
             ..WeixinMessage::default()
         }
@@ -314,10 +371,27 @@ impl GetUpdatesResp {
     }
 }
 
+/// proto: GetUploadUrlResp — pre-signed CDN upload targets.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct GetUploadUrlResp {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upload_param: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thumb_upload_param: Option<String>,
+    /// Full upload URL straight from the server; takes precedence over
+    /// `upload_param` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upload_full_url: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct SendMessageResp {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub message_id: Option<u64>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_id",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub message_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ret: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

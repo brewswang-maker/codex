@@ -1119,3 +1119,176 @@ fn skills_empty_inventory_shows_the_add_hint() {
         "the add entry emits SkillAddOpened, got {messages:?}"
     );
 }
+
+#[test]
+fn weixin_pane_shows_bridge_state_and_grants_pending() {
+    use crate::message::SidebarTab;
+    use codex_gui_core::PendingRow;
+    use codex_gui_core::WeixinPanelData;
+
+    let mut state = State::new(Flags::default_app_server());
+    state.status = Status::Ready;
+    state.mode = AppMode::Editor;
+    state.sidebar_tab = SidebarTab::Weixin;
+    state.weixin = Some(WeixinPanelData {
+        running: true,
+        logged_in: true,
+        bot_id: Some(String::from("wx@im.bot")),
+        pending: vec![PendingRow {
+            contact: String::from("carol"),
+            last_seen_ms: 0,
+        }],
+        allowed: vec![String::from("alice")],
+    });
+
+    let mut ui = simulator(view(&state));
+    assert!(ui.find("桥接进程运行中").is_ok(), "liveness shows");
+    assert!(ui.find("wx@im.bot").is_ok(), "the bot id shows");
+    assert!(ui.find("carol").is_ok(), "the pending contact shows");
+    assert!(ui.find("alice").is_ok(), "the allowlisted contact shows");
+
+    ui.click("放行").expect("the grant button is clickable");
+
+    let messages: Vec<Message> = ui.into_messages().collect();
+    assert!(
+        messages.iter().any(
+            |message| matches!(message, Message::WeixinAllowContact(contact) if contact == "carol")
+        ),
+        "clicking 放行 emits WeixinAllowContact, got {messages:?}"
+    );
+}
+
+#[test]
+fn weixin_pane_offers_in_gui_binding_when_not_logged_in() {
+    use crate::message::SidebarTab;
+    use codex_gui_core::WeixinPanelData;
+
+    let mut state = State::new(Flags::default_app_server());
+    state.status = Status::Ready;
+    state.mode = AppMode::Editor;
+    state.sidebar_tab = SidebarTab::Weixin;
+    state.weixin = Some(WeixinPanelData {
+        running: false,
+        logged_in: false,
+        bot_id: None,
+        pending: vec![],
+        allowed: vec![],
+    });
+
+    let mut ui = simulator(view(&state));
+    assert!(ui.find("桥接进程未运行").is_ok(), "liveness shows");
+
+    ui.click("绑定微信")
+        .expect("the binding entry button is clickable");
+
+    let messages: Vec<Message> = ui.into_messages().collect();
+    assert!(
+        messages
+            .iter()
+            .any(|message| matches!(message, Message::WeixinBindingStart)),
+        "clicking 绑定微信 emits WeixinBindingStart, got {messages:?}"
+    );
+}
+
+#[test]
+fn weixin_pane_offers_daemon_start_when_logged_in_and_stopped() {
+    use crate::message::SidebarTab;
+    use codex_gui_core::WeixinPanelData;
+
+    let mut state = State::new(Flags::default_app_server());
+    state.status = Status::Ready;
+    state.mode = AppMode::Editor;
+    state.sidebar_tab = SidebarTab::Weixin;
+    state.weixin = Some(WeixinPanelData {
+        running: false,
+        logged_in: true,
+        bot_id: Some("2904fec42318@im.bot".into()),
+        pending: vec![],
+        allowed: vec![],
+    });
+
+    let mut ui = simulator(view(&state));
+    assert!(ui.find("已登录").is_ok(), "login state shows");
+    assert!(ui.find("桥接进程未运行").is_ok(), "liveness shows");
+    assert!(
+        ui.find("绑定微信").is_err(),
+        "no binding entry once logged in"
+    );
+
+    ui.click("启动桥接")
+        .expect("the daemon start button is clickable");
+
+    let messages: Vec<Message> = ui.into_messages().collect();
+    assert!(
+        messages
+            .iter()
+            .any(|message| matches!(message, Message::WeixinDaemonStart)),
+        "clicking 启动桥接 emits WeixinDaemonStart, got {messages:?}"
+    );
+}
+
+#[test]
+fn weixin_binding_pane_shows_qr_and_cancel() {
+    use crate::message::SidebarTab;
+    use crate::weixin_binding::BindingPhase;
+    use crate::weixin_binding::QrMatrix;
+    use std::sync::Arc;
+    use std::sync::Mutex;
+
+    let mut state = State::new(Flags::default_app_server());
+    state.status = Status::Ready;
+    state.mode = AppMode::Editor;
+    state.sidebar_tab = SidebarTab::Weixin;
+    let (stop_tx, _stop_rx) = tokio::sync::oneshot::channel::<()>();
+    state.weixin_binding = Some(crate::weixin_binding::WeixinBinding {
+        phase: BindingPhase::QrReady {
+            matrix: Arc::new(QrMatrix::encode("https://liteapp.weixin.qq.com/q/test").expect("qr")),
+            note: String::new(),
+        },
+        verify_input: String::new(),
+        verify_code: Arc::new(Mutex::new(None)),
+        stop: Some(stop_tx),
+    });
+
+    let mut ui = simulator(view(&state));
+    assert!(ui.find("绑定微信").is_ok(), "the pane header shows");
+    assert!(
+        ui.find("请用手机微信扫描二维码，并在手机上确认登录。")
+            .is_ok(),
+        "the scan hint shows"
+    );
+
+    ui.click("取消绑定")
+        .expect("the cancel button is clickable");
+
+    let messages: Vec<Message> = ui.into_messages().collect();
+    assert!(
+        messages
+            .iter()
+            .any(|message| matches!(message, Message::WeixinBindingCancel)),
+        "clicking 取消绑定 emits WeixinBindingCancel, got {messages:?}"
+    );
+}
+
+#[test]
+fn weixin_originated_threads_carry_the_badge_in_the_sidebar() {
+    use crate::message::SidebarTab;
+
+    let mut state = State::new(Flags::default_app_server());
+    state.status = Status::Ready;
+    state.mode = AppMode::Editor;
+    state.sidebar_tab = SidebarTab::Threads;
+
+    let mut from_weixin = idle_thread("t1", "来自微信的任务");
+    from_weixin["threadSource"] = json!("weixin");
+    let response: ThreadListResponse = from_value(json!({
+        "data": [from_weixin, idle_thread("t2", "本地任务")],
+        "nextCursor": null,
+        "backwardsCursor": null
+    }))
+    .expect("list response decodes");
+    state.sessions.apply_list(&response);
+
+    let mut ui = simulator(view(&state));
+    assert!(ui.find("微").is_ok(), "the WeChat badge shows");
+}

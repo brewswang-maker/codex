@@ -100,6 +100,11 @@ pub struct ScheduledTask {
     pub kind: ScheduleKind,
     /// The prompt submitted into the conversation when due.
     pub prompt: String,
+    /// The project (thread cwd) this task belongs to. A fired task only
+    /// runs while the open conversation works in the same project; tasks
+    /// without a project never auto-submit and stay listed for cleanup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     /// Disabled tasks never fire but stay listed.
     pub enabled: bool,
     /// The last fire time, if any.
@@ -114,6 +119,14 @@ pub struct ScheduledTask {
 pub struct Scheduler {
     /// Every task, oldest first.
     pub tasks: Vec<ScheduledTask>,
+    /// Where [`save`](Self::save) writes; `None` falls back to
+    /// `~/.codex/gui-schedule.json`. Tests and [`load_from`] set this so
+    /// fixture mutations never leak into the user's real schedule.
+    #[serde(skip, default)]
+    save_path: Option<std::path::PathBuf>,
+    /// Monotonic source for task IDs; survives removals through persistence.
+    #[serde(default)]
+    next_id: u64,
 }
 
 impl Scheduler {
@@ -126,20 +139,32 @@ impl Scheduler {
         Self::load_from(&path).unwrap_or_default()
     }
 
-    /// Loads from an explicit path (also the test seam).
+    /// Loads from an explicit path (also the test seam); later saves go
+    /// back to the same file.
     pub fn load_from(path: &Path) -> Option<Self> {
         let raw = std::fs::read_to_string(path).ok()?;
-        serde_json::from_str(&raw).ok()
+        let mut scheduler: Self = serde_json::from_str(&raw).ok()?;
+        scheduler.save_path = Some(path.to_path_buf());
+        Some(scheduler)
     }
 
     /// Writes the list back; `false` when the disk write failed (the
     /// in-memory list stays authoritative either way).
     pub fn save(&self) -> bool {
-        let Some(home) = home_dir() else {
-            return false;
+        let path = match &self.save_path {
+            Some(path) => path.clone(),
+            None => match home_dir() {
+                Some(home) => home.join(".codex").join("gui-schedule.json"),
+                None => return false,
+            },
         };
-        let path = home.join(".codex").join("gui-schedule.json");
         self.save_to(&path)
+    }
+
+    /// Points persistence at an explicit path (the test seam for
+    /// mutation methods like [`add`](Self::add)).
+    pub fn set_save_path(&mut self, path: std::path::PathBuf) {
+        self.save_path = Some(path);
     }
 
     /// Saves to an explicit path (also the test seam).
@@ -148,19 +173,46 @@ impl Scheduler {
             let _ = std::fs::create_dir_all(parent);
         }
         match serde_json::to_string_pretty(self) {
-            Ok(raw) => std::fs::write(path, raw).is_ok(),
+            Ok(raw) => {
+                let temp = path.with_extension(format!("json.tmp-{}", std::process::id()));
+                std::fs::write(&temp, raw).is_ok() && std::fs::rename(&temp, path).is_ok()
+            }
             Err(_) => false,
         }
     }
 
     /// Adds a task and persists; returns its id.
     pub fn add(&mut self, name: &str, kind: ScheduleKind, prompt: &str, now: i64) -> String {
-        let id = format!("task-{now}-{}", self.tasks.len());
+        self.add_in(name, kind, prompt, None, now)
+    }
+
+    /// Adds a task bound to a project (thread cwd) and persists; returns
+    /// its id. The binding keeps fired prompts out of every other
+    /// project's conversation.
+    pub fn add_in(
+        &mut self,
+        name: &str,
+        kind: ScheduleKind,
+        prompt: &str,
+        project: Option<String>,
+        now: i64,
+    ) -> String {
+        let max_existing = self
+            .tasks
+            .iter()
+            .filter_map(|task| task.id.rsplit('-').next())
+            .filter_map(|suffix| suffix.parse::<u64>().ok())
+            .max()
+            .unwrap_or(0);
+        let sequence = self.next_id.max(max_existing) + 1;
+        self.next_id = sequence;
+        let id = format!("task-{now}-{sequence}");
         self.tasks.push(ScheduledTask {
             id: id.clone(),
             name: name.to_string(),
             kind,
             prompt: prompt.to_string(),
+            project,
             enabled: true,
             last_run: None,
             created_at: now,

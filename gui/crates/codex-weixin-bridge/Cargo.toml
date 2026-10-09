@@ -6,12 +6,15 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# CDN 媒体加解密（AES-128-ECB PKCS7）与上传前 MD5（D3）。
+aes = "0.8"
 base64.workspace = true
 clap.workspace = true
 # 会话桥复用 GUI 的 app-server stdio 抽象与协议类型（D2）。
 codex-app-server-protocol.workspace = true
 codex-gui-bridge.workspace = true
 home.workspace = true
+md-5 = "0.11"
 qrcode.workspace = true
 rand.workspace = true
 reqwest.workspace = true
@@ -25,6 +28,9 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 pretty_assertions = "1"
 tempfile = "3"
+
+[lints]
+workspace = true
 
 [[bin]]
 name = "codex-weixin-bridge"

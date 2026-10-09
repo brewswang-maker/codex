@@ -45,7 +45,8 @@ pub fn panel(state: &State) -> Element<'_, Message> {
                 .style(theme::dim),
         );
         for task in &state.scheduler.tasks {
-            list = list.push(task_card(task));
+            let waiting = state.scheduler_pending.iter().any(|p| p.id == task.id);
+            list = list.push(task_card(task, waiting));
         }
     }
     page.push(scrollable(list).height(Fill)).into()
@@ -108,8 +109,10 @@ fn new_task_form(state: &State) -> Element<'_, Message> {
     boards_shell::card(column![text("新建任务").size(theme::SIZE_BODY), body].spacing(8))
 }
 
-/// One task row: the enable toggle, the kind, the prompt, and delete.
-fn task_card(task: &ScheduledTask) -> Element<'_, Message> {
+/// One task row: the enable toggle, the kind, the bound project, the
+/// prompt, and delete. `waiting` marks a fired task whose project is not
+/// the open conversation, so it stays queued instead of leaking elsewhere.
+fn task_card(task: &ScheduledTask, waiting: bool) -> Element<'_, Message> {
     let mut headline = row![
         checkbox(task.enabled).label(task.name.clone()).on_toggle({
             let id = task.id.clone();
@@ -128,8 +131,26 @@ fn task_card(task: &ScheduledTask) -> Element<'_, Message> {
                 .style(theme::danger_text),
         );
     }
+    if waiting {
+        headline = headline.push(
+            text("等待所属项目")
+                .size(theme::SIZE_XS)
+                .style(theme::faint_text),
+        );
+    }
+    let project_line: Element<'_, Message> = match &task.project {
+        Some(project) => text(format!("项目: {project}"))
+            .size(theme::SIZE_XS)
+            .style(theme::faint_text)
+            .into(),
+        None => text("未绑定项目，不会自动执行；可删除后在目标项目重建")
+            .size(theme::SIZE_XS)
+            .style(theme::danger_text)
+            .into(),
+    };
     let info = column![
         headline,
+        project_line,
         text(task.prompt.clone())
             .size(theme::SIZE_SM)
             .style(theme::dim),

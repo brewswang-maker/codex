@@ -9,6 +9,7 @@ use codex_app_server_protocol::McpServerConnectionStatus;
 use codex_app_server_protocol::SkillScope;
 use codex_gui_core::PROVIDER_PRESETS;
 use codex_gui_core::SettingField;
+use codex_gui_core::localize_skill_description;
 use codex_gui_core::options;
 use codex_gui_core::provider_preset;
 use iced::Element;
@@ -204,7 +205,7 @@ const GENERAL_FIELDS: &[(SettingField, &str)] = &[
 /// `skills/config/write` without the draft/save cycle.
 fn skill_rows(state: &State) -> Vec<Element<'_, Message>> {
     if state.skills.rows.is_empty() {
-        return vec![text("no skills discovered").style(dim).into()];
+        return vec![text("未发现任何技能").style(dim).into()];
     }
     state
         .skills
@@ -219,7 +220,9 @@ fn skill_rows(state: &State) -> Vec<Element<'_, Message>> {
                         enabled: toggled,
                     }),
                 text(scope_label(skill.scope)).style(dim).width(60),
-                text(skill.description.clone()).style(dim).width(Fill),
+                text(localize_skill_description(&skill.name, &skill.description))
+                    .style(dim)
+                    .width(Fill),
             ]
             .spacing(12)
             .into()

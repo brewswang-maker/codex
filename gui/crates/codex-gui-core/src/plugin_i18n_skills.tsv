@@ -1,0 +1,607 @@
+temporal:temporal-developer	temporal:temporal-developer	开发、调试并管理 Temporal 应用，覆盖 Python/TS/Go/Java/.NET/Ruby/Rust
+temporal:temporal-ops	temporal:temporal-ops	通过 CLI 运维诊断 Temporal Cloud/自托管集群（非 SDK 开发）
+temporal:temporal-cloud-setup	temporal:temporal-cloud-setup	端到端开通 Temporal Cloud 并运行示例工作流
+temporal:temporal-serverless	temporal:temporal-serverless	在 AWS Lambda 无服务器环境部署运行 Temporal Worker
+build-web-apps:stripe-best-practices	build-web-apps:stripe-best-practices	指导 Stripe 集成决策：API 选型、Connect 平台、计费与合规
+build-web-apps:react-best-practices	build-web-apps:react-best-practices	Vercel 工程的 React/Next.js 性能优化指南
+build-web-apps:frontend-testing-debugging	build-web-apps:frontend-testing-debugging	调试与改进已渲染的前端应用（本地 dev server、UI 回归排查）
+build-web-apps:frontend-app-builder	build-web-apps:frontend-app-builder	从零构建新前端应用、仪表盘、游戏与创意网站
+build-web-apps:shadcn	build-web-apps:shadcn	管理 shadcn 组件：添加、检索、修复、调试与组合 UI
+build-web-apps:supabase-postgres-best-practices	build-web-apps:supabase-postgres-best-practices	Supabase 出品的 Postgres 性能优化与最佳实践
+superpowers:using-superpowers	superpowers:using-superpowers	对话开始时建立技能查找与调用规范
+superpowers:verification-before-completion	superpowers:verification-before-completion	宣称完成前必须先运行验证命令并确认输出
+superpowers:requesting-code-review	superpowers:requesting-code-review	完成任务或合并前核对是否满足需求
+superpowers:receiving-code-review	superpowers:receiving-code-review	以技术严谨性评估代码评审反馈后再实施
+superpowers:test-driven-development	superpowers:test-driven-development	实现任何功能或修复前先做方案设计
+superpowers:finishing-a-development-branch	superpowers:finishing-a-development-branch	实现完成且测试通过后决定如何集成
+superpowers:writing-skills	superpowers:writing-skills	创建、编辑新技能并在部署前验证
+superpowers:subagent-driven-development	superpowers:subagent-driven-development	在当前会话执行含独立任务的实现计划
+superpowers:brainstorming	superpowers:brainstorming	任何创造性工作前先探索用户意图与需求
+superpowers:using-git-worktrees	superpowers:using-git-worktrees	需要隔离工作区的功能开发前创建独立工作区
+superpowers:dispatching-parallel-agents	superpowers:dispatching-parallel-agents	并行处理 2 个以上无共享状态的独立任务
+superpowers:writing-plans	superpowers:writing-plans	动手写代码前先依据规格整理多步计划
+superpowers:systematic-debugging	superpowers:systematic-debugging	遇到 bug 或测试失败时先系统化定位根因
+superpowers:executing-plans	superpowers:executing-plans	在独立会话执行已写好的实现计划并设检查点
+notion:notion-spec-to-implementation	notion:notion-spec-to-implementation	把 Notion 规格转为实现计划、任务与进度跟踪
+notion:notion-meeting-intelligence	notion:notion-meeting-intelligence	用 Notion 上下文准备会议材料与议程
+notion:notion-knowledge-capture	notion:notion-knowledge-capture	把对话和决策沉淀为结构化 Notion 页面
+notion:notion-research-documentation	notion:notion-research-documentation	跨 Notion 调研并综合成简报、对比或报告
+adobe:adobe-create-mockups	adobe:adobe-create-mockups	把 logo/草图生成产品或场景样机图
+adobe:adobe-design-from-template	adobe:adobe-design-from-template	用 Adobe Express 模板制作海报、名片等视觉设计
+adobe:adobe-edit-quick-cut	adobe:adobe-edit-quick-cut	用 Adobe Quick Cut 把视频剪成精彩集锦短片
+adobe:adobe-create-social-variations	adobe:adobe-create-social-variations	把图片/视频调整尺寸导出为各平台适配素材
+adobe:adobe-batch-edit-photos	adobe:adobe-batch-edit-photos	对一组照片套用统一调色风格保持一致性
+adobe:adobe-retouch-portraits	adobe:adobe-retouch-portraits	批量人像修图（婚礼/活动摄影师场景）
+mixpanel-headless:mixpanelyst	mixpanel-headless:mixpanelyst	Mixpanel 产品分析：漏斗、留存、分群与指标查询
+mixpanel-headless:dashboard-expert	mixpanel-headless:dashboard-expert	Mixpanel 仪表盘的完整增删改查与分析
+mixpanel-headless:mixpanel-auth	mixpanel-headless:mixpanel-auth	管理 Mixpanel Headless 认证、账号与项目切换
+mixpanel-headless:mixpanel-headless-setup	mixpanel-headless:mixpanel-headless-setup	安装 mixpanel_headless 及数据栈并校验 Mixpanel 凭据
+stripe:stripe-apps	stripe:stripe-apps	构建、修改或评审 Stripe App（含结账页定制）
+stripe:stripe-best-practices	stripe:stripe-best-practices	指导 Stripe 集成决策：API 选型、Connect、计费合规
+stripe:connect-recommend	stripe:connect-recommend	Stripe Connect 配置、收费模式与 Dashboard 入门指导
+stripe:stripe-docs	stripe:stripe-docs	检索 Stripe 官方文档与 API 参考（优先于抓取网页）
+stripe:upgrade-stripe	stripe:upgrade-stripe	指导升级 Stripe API 版本与 SDK
+stripe:stripe-directory	stripe:stripe-directory	按行业/痛点查找企业、软件、服务商或合作伙伴
+stripe:stripe-projects	stripe:stripe-projects	用 Stripe Projects 开通数据库、认证等基础设施
+cloudflare:building-mcp-server-on-cloudflare	cloudflare:building-mcp-server-on-cloudflare	在 Cloudflare Workers 上构建远程 MCP 服务器
+cloudflare:cloudflare	cloudflare:cloudflare	Cloudflare 平台全览：Workers、Pages、存储、AI、网络与安全
+cloudflare:durable-objects	cloudflare:durable-objects	创建与评审 Cloudflare Durable Objects 有状态协调
+cloudflare:wrangler	cloudflare:wrangler	Cloudflare Workers CLI 部署管理 Workers/KV/R2/D1 等资源
+cloudflare:building-ai-agent-on-cloudflare	cloudflare:building-ai-agent-on-cloudflare	用 Agents SDK 在 Cloudflare 上构建 AI 智能体
+cloudflare:web-perf	cloudflare:web-perf	用 Chrome DevTools MCP 分析网页性能与 Core Web Vitals
+cloudflare:workers-best-practices	cloudflare:workers-best-practices	按生产最佳实践评审与编写 Cloudflare Workers 代码
+cloudflare:agents-sdk	cloudflare:agents-sdk	用 Agents SDK 构建有状态 AI 智能体与实时应用
+cloudflare:sandbox-sdk	cloudflare:sandbox-sdk	构建沙箱化安全代码执行环境（AI 解释器/CI 场景）
+openai-ads-conversions:openai-ads-conversions-setup	openai-ads-conversions:openai-ads-conversions-setup	指导接入 OpenAI Ads 转化像素与可选 CAPI 上报
+circleci:circleci-config	circleci:circleci-config	优化 CircleCI 配置：提速、缓存与稳定性
+circleci:circleci-cli	circleci:circleci-cli	用 CircleCI CLI 操作与排障流水线
+circleci:chunk	circleci:chunk	用 CircleCI Chunk 做 AI 辅助 CI/CD 排障
+circleci:circleci-builds	circleci:circleci-builds	诊断并安全修复失败的 CircleCI 构建
+dropbox:share-dropbox-content	dropbox:share-dropbox-content	创建与管理 Dropbox 分享链接
+dropbox:inspect-dropbox-file	dropbox:inspect-dropbox-file	检查 Dropbox 文件元数据、分享状态与内容
+dropbox:collect-files-with-request	dropbox:collect-files-with-request	创建与管理 Dropbox 文件收集请求
+dropbox:clean-up-dropbox-content	dropbox:clean-up-dropbox-content	识别并清理 Dropbox 中过时重复文件（需确认后删除）
+dropbox:organize-dropbox-folder	dropbox:organize-dropbox-folder	整理 Dropbox 目录结构：创建、复制与移动
+dropbox:find-dropbox-content	dropbox:find-dropbox-content	在 Dropbox 中搜索定位文件与文件夹
+boltz-api-cli:boltz-protein-design	boltz-api-cli:boltz-protein-design	用 Boltz 从头设计新型蛋白结合剂
+boltz-api-cli:boltz-small-molecule-design	boltz-api-cli:boltz-small-molecule-design	用 Boltz 设计新型小分子结合剂
+boltz-api-cli:boltz-structure-and-binding	boltz-api-cli:boltz-structure-and-binding	用 Boltz 预测单一复合物的结构与结合界面
+boltz-api-cli:boltz-cli-setup	boltz-api-cli:boltz-cli-setup	Boltz CLI 安装、升级与认证排障
+boltz-api-cli:boltz-protein-screen	boltz-api-cli:boltz-protein-screen	用 Boltz 对已有蛋白结合剂库做筛选排序
+boltz-api-cli:boltz-small-molecule-screen	boltz-api-cli:boltz-small-molecule-screen	用 Boltz 对已有小分子库做对接筛选与打分
+boltz-api-cli:boltz-small-molecule-adme	boltz-api-cli:boltz-small-molecule-adme	用 Boltz 从 SMILES 预测 ADME/ADMET 性质
+boltz-api-cli:boltz-check-status	boltz-api-cli:boltz-check-status	查询 Boltz 任务状态并恢复下载结果
+life-science-research:metabolights-skill	life-science-research:metabolights-skill	查询 MetaboLights 代谢组学研究元数据
+life-science-research:chembl-skill	life-science-research:chembl-skill	查询 ChEMBL 活性、分子、靶点与机制数据
+life-science-research:pubchem-pug-skill	life-science-research:pubchem-pug-skill	查询 PubChem 化合物性质、描述与实验摘要
+life-science-research:efo-ontology-skill	life-science-research:efo-ontology-skill	查询 EFO 本体术语及子级扩展
+life-science-research:gtex-eqtl-skill	life-science-research:gtex-eqtl-skill	按变异位点查询 GTEx 单组织 eQTL 关联
+life-science-research:ncbi-entrez-skill	life-science-research:ncbi-entrez-skill	查询 NCBI Entrez：PubMed/Gene/Protein/PMC/GEO
+life-science-research:rcsb-pdb-skill	life-science-research:rcsb-pdb-skill	查询 RCSB PDB 结构元数据与 FASTA
+life-science-research:bgee-skill	life-science-research:bgee-skill	查询 Bgee 健康组织表达元数据
+life-science-research:genebass-gene-burden-skill	life-science-research:genebass-gene-burden-skill	查询 Genebass 基因负荷 PheWAS 摘要
+life-science-research:ncbi-blast-skill	life-science-research:ncbi-blast-skill	提交并汇总 NCBI BLAST 比对任务
+life-science-research:chebi-skill	life-science-research:chebi-skill	查询 ChEBI 化学物质检索与本体
+life-science-research:rhea-skill	life-science-research:rhea-skill	检索 Rhea 生化反应库
+life-science-research:civic-skill	life-science-research:civic-skill	查询 CIViC 癌症变异解读证据
+life-science-research:gwas-catalog-skill	life-science-research:gwas-catalog-skill	查询 GWAS Catalog 研究、关联与 SNP 数据
+life-science-research:clinicaltrials-skill	life-science-research:clinicaltrials-skill	检索 ClinicalTrials.gov 临床试验
+life-science-research:tpmi-phewas-skill	life-science-research:tpmi-phewas-skill	查询 TPMI PheWAS 变异表型摘要
+life-science-research:quickgo-skill	life-science-research:quickgo-skill	查询 QuickGO 术语、注释与本体
+life-science-research:alphafold-skill	life-science-research:alphafold-skill	查询 AlphaFold 蛋白结构预测库
+life-science-research:finngen-phewas-skill	life-science-research:finngen-phewas-skill	查询 FinnGen PheWAS 变异表型摘要
+life-science-research:hmdb-skill	life-science-research:hmdb-skill	查询 HMDB 代谢物、蛋白、疾病与通路
+life-science-research:ncbi-pmc-skill	life-science-research:ncbi-pmc-skill	查询 NCBI PMC 开放获取文章元数据
+life-science-research:ipd-skill	life-science-research:ipd-skill	查询 IPD HLA 等位基因元数据
+life-science-research:opentargets-skill	life-science-research:opentargets-skill	查询 Open Targets 靶点-疾病-药物关联
+life-science-research:pride-skill	life-science-research:pride-skill	查询 PRIDE 蛋白质组学项目元数据
+life-science-research:biostudies-arrayexpress-skill	life-science-research:biostudies-arrayexpress-skill	查询 BioStudies/ArrayExpress 研究检索
+life-science-research:gnomad-graphql-skill	life-science-research:gnomad-graphql-skill	查询 gnomAD 变异频率与基因约束
+life-science-research:pharmgkb-skill	life-science-research:pharmgkb-skill	查询 PharmGKB 药物基因组学与临床注释
+life-science-research:ensembl-skill	life-science-research:ensembl-skill	查询 Ensembl 基因/变异注释数据
+life-science-research:research-router-skill	life-science-research:research-router-skill	把宽泛的生命科学研究请求路由到合适的技能
+life-science-research:bindingdb-skill	life-science-research:bindingdb-skill	查询 BindingDB 配体-靶点结合数据
+life-science-research:rnacentral-skill	life-science-research:rnacentral-skill	查询 RNAcentral RNA 条目与交叉引用
+life-science-research:biobankjapan-phewas-skill	life-science-research:biobankjapan-phewas-skill	查询 BioBank Japan PheWAS 变异摘要
+life-science-research:string-skill	life-science-research:string-skill	查询 STRING 蛋白互作网络与富集
+life-science-research:mgnify-skill	life-science-research:mgnify-skill	查询 MGnify 微生物组研究与样本元数据
+life-science-research:biorxiv-skill	life-science-research:biorxiv-skill	查询 bioRxiv/medRxiv 预印本元数据
+life-science-research:proteomexchange-skill	life-science-research:proteomexchange-skill	查询 ProteomeXchange PROXI 蛋白质组数据
+life-science-research:reactome-skill	life-science-research:reactome-skill	查询 Reactome 通路与事件数据
+life-science-research:ncbi-datasets-skill	life-science-research:ncbi-datasets-skill	查询 NCBI Datasets 基因组与分类元数据
+life-science-research:clinvar-variation-skill	life-science-research:clinvar-variation-skill	查询 ClinVar 变异解读与标识符
+life-science-research:cbioportal-skill	life-science-research:cbioportal-skill	查询 cBioPortal 癌症基因组与临床数据
+life-science-research:human-protein-atlas-skill	life-science-research:human-protein-atlas-skill	查询人类蛋白图谱组织/细胞系表达
+life-science-research:eva-skill	life-science-research:eva-skill	查询 EVA 欧洲变异档案
+life-science-research:uniprot-skill	life-science-research:uniprot-skill	查询 UniProt 蛋白序列与注释
+life-science-research:cellxgene-skill	life-science-research:cellxgene-skill	查询 CELLxGENE 单细胞数据集元数据
+life-science-research:encode-skill	life-science-research:encode-skill	查询 ENCODE 调控元件注释
+life-science-research:eqtl-catalogue-skill	life-science-research:eqtl-catalogue-skill	查询 eQTL Catalogue 关联数据
+life-science-research:ncbi-clinicaltables-skill	life-science-research:ncbi-clinicaltables-skill	检索 NCBI Gene 人类基因
+life-science-research:epigraphdb-skill	life-science-research:epigraphdb-skill	查询 EpiGraphDB 流行病学本体证据
+life-science-research:ukb-topmed-phewas-skill	life-science-research:ukb-topmed-phewas-skill	查询 UKB-TOPMed PheWAS 变异摘要
+life-science-research:locus-to-gene-mapper-skill	life-science-research:locus-to-gene-mapper-skill	把 GWAS 位点映射到候选基因的多步分析链
+build-ios-apps:ios-app-intents	build-ios-apps:ios-app-intents	为 iOS 设计 App Intents、实体与快捷指令
+build-ios-apps:ios-ettrace-performance	build-ios-apps:ios-ettrace-performance	采集并解读 iOS 模拟器 ETTrace 性能剖析
+build-ios-apps:ios-debugger-agent	build-ios-apps:ios-debugger-agent	用 XcodeBuildMCP 构建运行调试 iOS 应用
+build-ios-apps:ios-simulator-browser	build-ios-apps:ios-simulator-browser	把 iOS 模拟器镜像到浏览器并热重载 SwiftUI 预览
+build-ios-apps:ios-memgraph-leaks	build-ios-apps:ios-memgraph-leaks	采集检查 iOS 内存泄漏与对象图
+build-ios-apps:swiftui-view-refactor	build-ios-apps:swiftui-view-refactor	重构 SwiftUI 视图文件为可测试结构
+build-ios-apps:swiftui-performance-audit	build-ios-apps:swiftui-performance-audit	从代码审计 SwiftUI 渲染性能
+build-ios-apps:swiftui-liquid-glass	build-ios-apps:swiftui-liquid-glass	实现评审 iOS 26+ Liquid Glass UI
+build-ios-apps:swiftui-ui-patterns	build-ios-apps:swiftui-ui-patterns	用组件模式构建重构 SwiftUI 界面
+supabase:supabase	supabase:supabase	Supabase 全产品与客户端库开发指南
+supabase:supabase-postgres-best-practices	supabase:supabase-postgres-best-practices	Supabase 出品的 Postgres 性能优化与最佳实践
+build-macos-apps:signing-entitlements	build-macos-apps:signing-entitlements	检查 macOS 签名、权限与 Gatekeeper 问题
+build-macos-apps:swiftpm-macos	build-macos-apps:swiftpm-macos	构建运行测试 SwiftPM macOS 包
+build-macos-apps:test-triage	build-macos-apps:test-triage	分诊 macOS 跨 Xcode/SwiftPM 测试失败
+build-macos-apps:telemetry	build-macos-apps:telemetry	接入并核查 macOS 运行时遥测日志
+build-macos-apps:view-refactor	build-macos-apps:view-refactor	重构 macOS SwiftUI 视图与场景结构
+build-macos-apps:packaging-notarization	build-macos-apps:packaging-notarization	准备 macOS 打包与公证流程
+build-macos-apps:window-management	build-macos-apps:window-management	定制 macOS SwiftUI 窗口与场景行为
+build-macos-apps:build-run-debug	build-macos-apps:build-run-debug	构建运行调试 macOS 应用并排查失败
+build-macos-apps:appkit-interop	build-macos-apps:appkit-interop	窄范围桥接 macOS SwiftUI 到 AppKit
+build-macos-apps:swiftui-patterns	build-macos-apps:swiftui-patterns	构建 macOS SwiftUI 场景与桌面组件
+build-macos-apps:liquid-glass	build-macos-apps:liquid-glass	实现评审 macOS Liquid Glass UI
+sentry:sentry	sentry:sentry	只读查询 Sentry 问题、事件与生产错误
+twilio-developer-kit:twilio-identity-verification-advisor	twilio-developer-kit:twilio-identity-verification-advisor	身份验证与反欺诈方案规划
+twilio-developer-kit:twilio-security-api-auth	twilio-developer-kit:twilio-security-api-auth	选择实现正确的 Twilio 认证方式
+twilio-developer-kit:twilio-enterprise-knowledge	twilio-developer-kit:twilio-enterprise-knowledge	用 Enterprise Knowledge 给智能体加知识检索
+twilio-developer-kit:twilio-verify-send-otp	twilio-developer-kit:twilio-verify-send-otp	通过 Twilio Verify 发送校验一次性密码
+twilio-developer-kit:twilio-agent-connect	twilio-developer-kit:twilio-agent-connect	集成 Twilio Agent Connect 对接第三方 LLM
+twilio-developer-kit:twilio-iam-auth-setup	twilio-developer-kit:twilio-iam-auth-setup	管理 Twilio 认证凭据与轮换
+twilio-developer-kit:twilio-content-template-builder	twilio-developer-kit:twilio-content-template-builder	用 Content API 创建管理消息模板
+twilio-developer-kit:twilio-debugging-observability	twilio-developer-kit:twilio-debugging-observability	调试 Twilio 集成并搭建生产可观测性
+twilio-developer-kit:twilio-isv-sms-best-practices	twilio-developer-kit:twilio-isv-sms-best-practices	ISV 在多租户 SaaS 中集成短信的最佳实践
+twilio-developer-kit:twilio-agent-augmentation-architect	twilio-developer-kit:twilio-agent-augmentation-architect	真人客服实时 AI 增强方案规划
+twilio-developer-kit:twilio-compliance-traffic	twilio-developer-kit:twilio-compliance-traffic	Twilio 消息与语音的合规红线规则
+twilio-developer-kit:twilio-sendgrid-suppressions	twilio-developer-kit:twilio-sendgrid-suppressions	管理 SendGrid 邮件抑制列表
+twilio-developer-kit:twilio-messaging-services	twilio-developer-kit:twilio-messaging-services	创建配置生产级 Twilio 消息服务
+twilio-developer-kit:twilio-sendgrid-webhooks	twilio-developer-kit:twilio-sendgrid-webhooks	通过 SendGrid Webhook 追踪邮件送达与互动
+twilio-developer-kit:twilio-ai-agent-architect	twilio-developer-kit:twilio-ai-agent-architect	AI 对话智能体方案规划
+twilio-developer-kit:twilio-conference-calls	twilio-developer-kit:twilio-conference-calls	用 Twilio Conference 构建多方通话
+twilio-developer-kit:twilio-messaging-overview	twilio-developer-kit:twilio-messaging-overview	Twilio 消息渠道总览与上手指南
+twilio-developer-kit:conversation-intelligence	twilio-developer-kit:conversation-intelligence	Twilio 对话智能：实时/通话后分析开发
+twilio-developer-kit:twilio-messaging-webhooks	twilio-developer-kit:twilio-messaging-webhooks	接收响应来电消息并追踪送达状态
+twilio-developer-kit:twilio-security-compliance-hipaa	twilio-developer-kit:twilio-security-compliance-hipaa	配置 Twilio 账户满足 HIPAA 合规
+twilio-developer-kit:twilio-voice-conversation-relay	twilio-developer-kit:twilio-voice-conversation-relay	用 ConversationRelay 构建 AI 语音智能体
+twilio-developer-kit:twilio-call-recordings	twilio-developer-kit:twilio-call-recordings	正确录制 Twilio 语音通话
+twilio-developer-kit:twilio-send-message	twilio-developer-kit:twilio-send-message	跨渠道发送 Programmable 消息
+twilio-developer-kit:twilio-rcs-messaging	twilio-developer-kit:twilio-rcs-messaging	通过 Twilio 发送 RCS 商业消息
+twilio-developer-kit:twilio-webhook-architecture	twilio-developer-kit:twilio-webhook-architecture	设计、加固与运维 Twilio Webhook 端点
+twilio-developer-kit:twilio-sendgrid-deliverability-advisor	twilio-developer-kit:twilio-sendgrid-deliverability-advisor	诊断邮件送达率问题（进垃圾箱/退信）
+twilio-developer-kit:twilio-numbers-senders	twilio-developer-kit:twilio-numbers-senders	选择正确的 Twilio 号码类型与发送方
+twilio-developer-kit:twilio-notifications-alerts-advisor	twilio-developer-kit:twilio-notifications-alerts-advisor	事务性通知、告警与提醒方案规划
+twilio-developer-kit:twilio-compliance-onboarding	twilio-developer-kit:twilio-compliance-onboarding	Twilio 流量开通前必需的注册合规
+twilio-developer-kit:twilio-account-setup	twilio-developer-kit:twilio-account-setup	从零创建配置 Twilio 账户
+twilio-developer-kit:twilio-customer-memory	twilio-developer-kit:twilio-customer-memory	用 Conversation Memory 存取客户上下文
+twilio-developer-kit:twilio-messaging-channel-advisor	twilio-developer-kit:twilio-messaging-channel-advisor	挑选合适的消息渠道（SMS/MMS/RCS/WhatsApp）
+twilio-developer-kit:twilio-sms-send-message	twilio-developer-kit:twilio-sms-send-message	SMS 与 MMS 深度参考与错误排查
+twilio-developer-kit:twilio-sendgrid-engagement-quality	twilio-developer-kit:twilio-sendgrid-engagement-quality	用 SendGrid 互动质量评分监控邮件健康
+twilio-developer-kit:twilio-voice-twiml	twilio-developer-kit:twilio-voice-twiml	用 TwiML 构建语音呼叫逻辑
+twilio-developer-kit:twilio-whatsapp-manage-senders	twilio-developer-kit:twilio-whatsapp-manage-senders	通过 Channels API 管理 WhatsApp 发送方
+twilio-developer-kit:twilio-conversation-orchestrator	twilio-developer-kit:twilio-conversation-orchestrator	配置 Conversation Orchestrator 自动捕获路由
+twilio-developer-kit:twilio-sendgrid-account-setup	twilio-developer-kit:twilio-sendgrid-account-setup	设置 SendGrid 账户与域名认证
+twilio-developer-kit:twilio-email-deliverability-advisor	twilio-developer-kit:twilio-email-deliverability-advisor	Twilio Email API 专用送达率顾问
+twilio-developer-kit:twilio-sendgrid-inbound-parse	twilio-developer-kit:twilio-sendgrid-inbound-parse	通过 SendGrid Inbound Parse 接收邮件
+twilio-developer-kit:twilio-sendgrid-email-settings	twilio-developer-kit:twilio-sendgrid-email-settings	配置 SendGrid 动态模板与追踪设置
+twilio-developer-kit:twilio-security-hardening	twilio-developer-kit:twilio-security-hardening	防御常见攻击加固 Twilio 应用
+twilio-developer-kit:twilio-sendgrid-email-send	twilio-developer-kit:twilio-sendgrid-email-send	通过 SendGrid v3 API 发送事务与批量邮件
+twilio-developer-kit:twilio-organizations-setup	twilio-developer-kit:twilio-organizations-setup	用 Twilio Organizations 集中管理账户与用户
+twilio-developer-kit:twilio-lookup-phone-intelligence	twilio-developer-kit:twilio-lookup-phone-intelligence	用 Lookup v2 查询号码情报与验证
+twilio-developer-kit:twilio-voice-outbound-calls	twilio-developer-kit:twilio-voice-outbound-calls	通过 Programmable Voice API 拨打外呼
+twilio-developer-kit:twilio-customer-support-architect	twilio-developer-kit:twilio-customer-support-architect	客服与支持系统建设方案规划
+twilio-developer-kit:twilio-conversations-classic-api	twilio-developer-kit:twilio-conversations-classic-api	用 Conversations API 构建多渠道消息体验
+twilio-developer-kit:twilio-regulatory-compliance-bundles	twilio-developer-kit:twilio-regulatory-compliance-bundles	管理国际号码的监管合规资料包
+twilio-developer-kit:twilio-taskrouter-routing	twilio-developer-kit:twilio-taskrouter-routing	用 TaskRouter 按技能路由任务给坐席
+twilio-developer-kit:twilio-marketing-promotions-advisor	twilio-developer-kit:twilio-marketing-promotions-advisor	营销与推广消息方案规划
+twilio-developer-kit:twilio-cli-reference	twilio-developer-kit:twilio-cli-reference	从终端管理 Twilio 资源的 CLI 参考
+twilio-developer-kit:twilio-email-send	twilio-developer-kit:twilio-email-send	用 Twilio 凭据通过 comms API 发送邮件
+twilio-developer-kit:twilio-reliability-patterns	twilio-developer-kit:twilio-reliability-patterns	处理 Twilio 大规模调用的限流与重试
+twilio-developer-kit:twilio-whatsapp-send-message	twilio-developer-kit:twilio-whatsapp-send-message	WhatsApp 消息深度参考（24 小时窗口等）
+magicpath:magicpath	magicpath:magicpath	用 MagicPath 检索、安装、授权 UI 组件与设计
+plugin-eval:evaluate-plugin	plugin-eval:evaluate-plugin	用工程化语言评测本地 Codex 插件
+plugin-eval:metric-pack-designer	plugin-eval:metric-pack-designer	为 plugin-eval 设计自定义评测指标包
+plugin-eval:plugin-eval	plugin-eval:plugin-eval	帮工程师评测本地技能/插件并给出修复优先级
+plugin-eval:evaluate-skill	plugin-eval:evaluate-skill	用工程化语言评测本地 Codex 技能
+plugin-eval:improve-skill	plugin-eval:improve-skill	把 plugin-eval 结论转成技能重写方案
+google-drive:google-drive	google-drive:google-drive	以 Google Drive 为入口处理 Docs/Sheets/Slides
+google-drive:google-sheets	google-drive:google-sheets	按单元格范围精确分析编辑 Google Sheets
+google-drive:google-docs	google-drive:google-docs	创建编辑 Google Docs 并保留结构语义
+google-drive:google-slides	google-drive:google-slides	按原生模板设计系统撰写 Google Slides
+google-drive:google-drive-comments	google-drive:google-drive-comments	在 Google 文件上写入、回复、解决评论
+data-analytics:market-sizing	data-analytics:market-sizing	估算市场/细分/机会规模（TAM/SAM/SOM）
+data-analytics:analyze-data-quality	data-analytics:analyze-data-quality	评估数据、查询结果或分析证据是否可信可用
+data-analytics:build-dashboard	data-analytics:build-dashboard	构建有数据源支撑的性能监控仪表盘
+data-analytics:build-report	data-analytics:build-report	为管理层/产品/技术受众撰写分析报告
+data-analytics:kpi-reporting	data-analytics:kpi-reporting	产出 KPI 播报、记分卡与周月季度汇报
+data-analytics:jupyter-notebooks	data-analytics:jupyter-notebooks	创建可复现的 SQL/Python 分析笔记本
+data-analytics:metric-diagnostics	data-analytics:metric-diagnostics	诊断指标变动或与预期不符的原因
+data-analytics:design-kpis	data-analytics:design-kpis	设计 KPI 框架、指标定义与护栏目标
+data-analytics:publish-artifact-to-sites	data-analytics:publish-artifact-to-sites	通过 Sites 发布已验证的分析报告/仪表盘
+data-analytics:gather-business-context	data-analytics:gather-business-context	从连接源收集业务上下文供后续分析
+data-analytics:create-data-context	data-analytics:create-data-context	创建维护数据分析语义层
+data-analytics:visualize-data	data-analytics:visualize-data	设计构建校验定量图表与图形
+data-analytics:validate-data	data-analytics:validate-data	校验分析是否准确、可支撑决策后再发布
+data-analytics:index	data-analytics:index	把数据分析请求路由到合适的专用流程
+data-analytics:product-business-analysis	data-analytics:product-business-analysis	分析产品/业务数据以支撑决策建议
+hyperframes:hyperframes-registry	hyperframes:hyperframes-registry	把注册表区块组件安装接入 HyperFrames 合成
+hyperframes:website-to-hyperframes	hyperframes:website-to-hyperframes	抓取网站并据此生成 HyperFrames 视频
+hyperframes:gsap	hyperframes:gsap	HyperFrames 的 GSAP 动画参考
+hyperframes:hyperframes	hyperframes:hyperframes	在 HyperFrames HTML 中创作视频合成与动效
+hyperframes:hyperframes-cli	hyperframes:hyperframes-cli	HyperFrames CLI：init/lint/preview/render/tts 等
+expo:expo-api-routes	expo:expo-api-routes	Expo Router + EAS Hosting 的 API 路由指南
+expo:expo-ui-swift-ui	expo:expo-ui-swift-ui	在 Expo 应用中使用 SwiftUI 视图与修饰符
+expo:building-native-ui	expo:building-native-ui	用 Expo Router 构建美观应用的完整指南
+expo:expo-cicd-workflows	expo:expo-cicd-workflows	理解和编写 Expo 项目的 EAS 工作流 YAML
+expo:codex-expo-run-actions	expo:codex-expo-run-actions	把 Expo 项目接入 Codex 应用的运行按钮
+expo:expo-deployment	expo:expo-deployment	把 Expo 应用部署到 App Store/Play/网页
+expo:upgrading-expo	expo:upgrading-expo	升级 Expo SDK 并修复依赖问题
+expo:use-dom	expo:use-dom	用 Expo DOM 组件渐进把网页迁移到原生
+expo:native-data-fetching	expo:native-data-fetching	实现调试网络请求/API/数据获取（含离线）
+expo:expo-module	expo:expo-module	用 Expo Modules API 编写原生模块与视图
+expo:expo-dev-client	expo:expo-dev-client	本地或经 TestFlight 分发 Expo 开发客户端
+expo:expo-tailwind-setup	expo:expo-tailwind-setup	在 Expo 中用 NativeWind v5 配置 Tailwind v4
+expo:expo-ui-jetpack-compose	expo:expo-ui-jetpack-compose	在 Expo 应用中使用 Jetpack Compose 视图
+vercel:micro	vercel:micro	Vercel 异步 HTTP 微服务框架 micro 指南
+vercel:next-cache-components	vercel:next-cache-components	Next.js 16 缓存组件：PPR/cacheLife/cacheTag
+vercel:payments	vercel:payments	Stripe 支付集成：Marketplace、结账、Webhook
+vercel:geist	vercel:geist	Vercel 默认字体系统 Geist 的配置使用
+vercel:cms	vercel:cms	Headless CMS 集成：Sanity/Contentful 等
+vercel:ai-elements	vercel:ai-elements	AI Elements 组件库：AI 界面的 React 组件
+vercel:vercel-sandbox	vercel:vercel-sandbox	Vercel Sandbox 隔离运行不可信代码
+vercel:swr	vercel:swr	SWR 客户端数据获取、缓存与重验证
+vercel:agent-browser-verify	vercel:agent-browser-verify	启动 dev server 后自动做浏览器可视化自检
+vercel:vercel-flags	vercel:vercel-flags	Vercel Flags 特性开关：灰度、A/B 与适配器
+vercel:routing-middleware	vercel:routing-middleware	Vercel 路由中间件：缓存前拦截、重写与个性化
+vercel:vercel-agent	vercel:vercel-agent	Vercel Agent：AI 代码评审、事故调查与安装
+vercel:chat-sdk	vercel:chat-sdk	Vercel Chat SDK：一套代码多平台聊天机器人
+vercel:bootstrap	vercel:bootstrap	为依赖 Vercel 资源的仓库做项目初始化
+vercel:vercel-storage	vercel:vercel-storage	Vercel 存储：Blob、Edge Config 与数据库
+vercel:react-best-practices	vercel:react-best-practices	编辑 TSX 组件后做 React 最佳实践评审
+vercel:deployments-cicd	vercel:deployments-cicd	Vercel 部署与 CI/CD：发布、回滚、巡检
+vercel:runtime-cache	vercel:runtime-cache	Vercel 运行时缓存 API：按区域键值与标签失效
+vercel:ncc	vercel:ncc	用 @vercel/ncc 把 Node 模块打包成单文件
+vercel:nextjs	vercel:nextjs	Next.js App Router：路由/服务端组件/Actions
+vercel:json-render	vercel:json-render	AI 聊天响应渲染：UIMessage、工具调用与流式
+vercel:ai-gateway	vercel:ai-gateway	Vercel AI Gateway：模型路由、故障转移与计费
+vercel:sign-in-with-vercel	vercel:sign-in-with-vercel	用 Vercel 账号做 OAuth/OIDC 登录
+vercel:verification	vercel:verification	端到端验证完整流程：浏览器→API→数据→响应
+vercel:shadcn	vercel:shadcn	shadcn/ui：CLI、组件安装、主题与 Tailwind
+vercel:vercel-api	vercel:vercel-api	Vercel 应用与 REST API 实时访问
+vercel:marketplace	vercel:marketplace	通过 vercel integration CLI 管理第三方集成
+vercel:cron-jobs	vercel:cron-jobs	在 vercel.json 配置 Vercel 定时任务
+vercel:email	vercel:email	邮件发送集成：Resend + React Email 模板
+vercel:ai-sdk	vercel:ai-sdk	Vercel AI SDK：聊天、生成、结构化输出与工具
+vercel:turbopack	vercel:turbopack	Turbopack：Next.js 打包器、HMR 与构建调试
+vercel:env-vars	vercel:env-vars	Vercel 环境变量：.env、vercel env 与 OIDC
+vercel:ai-generation-persistence	vercel:ai-generation-persistence	AI 生成持久化：唯一 ID、可寻址 URL 与存储
+vercel:vercel-connect	vercel:vercel-connect	Vercel Connect：为第三方服务安全获取令牌
+vercel:turborepo	vercel:turborepo	Turborepo：monorepo 构建缓存与增量执行
+vercel:satori	vercel:satori	Satori：把 HTML/CSS 转成 SVG（动态 OG 图）
+vercel:knowledge-update	vercel:knowledge-update	纠正关于 Vercel 平台的过时知识并在会话注入
+vercel:geistdocs	vercel:geistdocs	Geistdocs 文档模板：MDX、AI 聊天与 i18n
+vercel:vercel-functions	vercel:vercel-functions	Vercel Functions：无服务器/边缘/Fluid 计算
+vercel:auth	vercel:auth	认证集成：Clerk/Descope/Auth0 接入 Next.js
+vercel:microfrontends	vercel:microfrontends	在 Vercel 构建部署微前端
+vercel:vercel-services	vercel:vercel-services	Vercel Services：单项目部署多个服务
+vercel:next-upgrade	vercel:next-upgrade	按官方迁移指南升级 Next.js 并跑 codemods
+vercel:v0-dev	vercel:v0-dev	v0 by Vercel：从提示生成 UI 组件与 SDK 集成
+vercel:vercel-queues	vercel:vercel-queues	Vercel Queues：持久事件流、重试与延迟投递
+vercel:eve	vercel:eve	用 eve 框架构建持久化 AI 智能体应用
+vercel:vercel-cli	vercel:vercel-cli	Vercel CLI：部署、环境变量、日志与域名
+vercel:next-forge	vercel:next-forge	next-forge：Vercel 的生产级 SaaS 起步模板
+vercel:cdn-caching	vercel:cdn-caching	调试 Vercel CDN 缓存：命中率、失效与成本
+vercel:vercel-firewall	vercel:vercel-firewall	Vercel Firewall：DDoS 防护、WAF 与限流
+vercel:agent-browser	vercel:agent-browser	面向 AI 智能体的浏览器自动化 CLI
+zoom:zoom-oauth	zoom:zoom-oauth	实现 OAuth 认证
+zoom:ui-toolkit	zoom:ui-toolkit	使用 Zoom UI Toolkit
+zoom:build-zoom-team-chat-app	zoom:build-zoom-team-chat-app	构建团队聊天功能
+zoom:build-zoom-phone-integration	zoom:build-zoom-phone-integration	构建电话/拨号功能
+zoom:build-zoom-meeting-app	zoom:build-zoom-meeting-app	嵌入 Zoom 会议
+zoom:plan-zoom-product	zoom:plan-zoom-product	选择 Zoom 产品方案
+zoom:scribe	zoom:scribe	使用 Scribe 记录功能
+zoom:start	zoom:start	开始 Zoom 相关开发
+zoom:setup-zoom-oauth	zoom:setup-zoom-oauth	配置 OAuth 认证
+zoom:build-zoom-virtual-agent	zoom:build-zoom-virtual-agent	使用虚拟客服 Virtual Agent
+zoom:choose-zoom-approach	zoom:choose-zoom-approach	选择技术架构方案
+zoom:build-zoom-rest-api-app	zoom:build-zoom-rest-api-app	调用 Zoom REST API
+zoom:debug-zoom-integration	zoom:debug-zoom-integration	做故障隔离设计
+zoom:setup-zoom-websockets	zoom:setup-zoom-websockets	基于 Zoom WebSockets 开发
+zoom:setup-zoom-webhooks	zoom:setup-zoom-webhooks	基于 Zoom Webhooks 开发
+zoom:zoom-general	zoom:zoom-general	对比 Zoom 产品
+zoom:probe-sdk	zoom:probe-sdk	使用 Probe SDK
+zoom:debug-zoom	zoom:debug-zoom	调试问题故障
+zoom:rivet-sdk	zoom:rivet-sdk	使用 Rivet SDK
+zoom:zoom-cobrowse-sdk	zoom:zoom-cobrowse-sdk	使用协同浏览 Cobrowse
+zoom:build-zoom-contact-center-app	zoom:build-zoom-contact-center-app	使用呼叫中心 Contact Center
+zoom:build-zoom-bot	zoom:build-zoom-bot	构建聊天机器人
+zoom:zoom-apps-sdk	zoom:zoom-apps-sdk	使用 Zoom Apps SDK
+zoom:build-zoom-video-sdk-app	zoom:build-zoom-video-sdk-app	使用 Video SDK
+zoom:build-zoom-meeting-sdk-app	zoom:build-zoom-meeting-sdk-app	使用 Meeting SDK
+zoom:zoom-rtms	zoom:zoom-rtms	使用实时媒体流 RTMS
+zoom:plan-zoom-integration	zoom:plan-zoom-integration	规划 Zoom 集成方案
+game-studio:sprite-pipeline	game-studio:sprite-pipeline	生成并归一化 2D 精灵动画序列
+game-studio:web-game-foundations	game-studio:web-game-foundations	实现前确定浏览器游戏架构与边界
+game-studio:phaser-2d-game	game-studio:phaser-2d-game	用 Phaser+TS+Vite 实现 2D 浏览器游戏
+game-studio:game-studio	game-studio:game-studio	为浏览器游戏工作选择技术栈与规划流程
+game-studio:game-playtest	game-studio:game-playtest	对浏览器游戏做冒烟测试与前端 QA
+game-studio:game-ui-frontend	game-studio:game-ui-frontend	设计游戏 HUD、菜单与覆盖层 UI
+game-studio:web-3d-asset-pipeline	game-studio:web-3d-asset-pipeline	准备优化 GLB/glTF 3D 资产
+game-studio:react-three-fiber-game	game-studio:react-three-fiber-game	用 React Three Fiber 构建 3D 浏览器游戏
+game-studio:three-webgl-game	game-studio:three-webgl-game	用原生 Three.js 实现游戏运行时
+posthog:posthog	posthog:posthog	PostHog 产品分析：HogQL、开关与实验
+nvidia:nemoclaw-user-get-started	nvidia:nemoclaw-user-get-started	安装 NemoClaw 并启动沙箱运行首个智能体
+nvidia:omniverse-usd-performance-tuning	nvidia:omniverse-usd-performance-tuning	USD 场景性能诊断与优化顶层流程
+nvidia:cuopt-user-rules	nvidia:cuopt-user-rules	NVIDIA cuOpt 终端用户调用基础规则
+nvidia:aiq-research	nvidia:aiq-research	通过 NVIDIA AI-Q Blueprint 后端做深度研究
+nvidia:physical-ai-neural-reconstruction	nvidia:physical-ai-neural-reconstruction	NVIDIA NuRec/NRE 工作路由器
+nvidia:physical-ai-infrastructure-setup-and-resilient-scaling	nvidia:physical-ai-infrastructure-setup-and-resilient-scaling	搭建加固物理 AI 合成数据生成基础设施
+nvidia:aiq-deploy	nvidia:aiq-deploy	安装部署排查 NVIDIA AI-Q Blueprint 基础设施
+nvidia:omniverse-cad-to-simready	nvidia:omniverse-cad-to-simready	CAD 资产到 SimReady USD 的端到端流程
+nvidia:nvidia-skill-finder	nvidia:nvidia-skill-finder	NVIDIA 相关请求的技能总入口路由
+nvidia:omniverse-realtime-viewer	nvidia:omniverse-realtime-viewer	Omniverse 实时查看器 USD 应用的路由入口
+nvidia:dynamo-router-starter	nvidia:dynamo-router-starter	启动修补 Dynamo 路由模式并冒烟验证
+nvidia:dynamo-interconnect-check	nvidia:dynamo-interconnect-check	验证 Dynamo 部署互联是否支持分离式推理
+coderabbit:code-review	coderabbit:code-review	用 CodeRabbit AI 评审代码变更与 PR
+zotero:Zotero	zotero:Zotero	从 Codex 操作本地 Zotero 文献库与引用
+public-equity-investing:idea-generation	public-equity-investing:idea-generation	初步筛选公开股票投资标的
+public-equity-investing:comps-valuation	public-equity-investing:comps-valuation	可比公司估值分析与报告
+public-equity-investing:earnings-deep-dive	public-equity-investing:earnings-deep-dive	财报后解析上市公司业绩与指引
+public-equity-investing:equity-model-update	public-equity-investing:equity-model-update	按映射表安全更新公司财务模型副本
+public-equity-investing:portfolio-risk-management	public-equity-investing:portfolio-risk-management	测算仓位规模并构建对冲风险计划
+public-equity-investing:scenario-sensitivity-generator	public-equity-investing:scenario-sensitivity-generator	把基准情形转为情景与敏感性分析
+public-equity-investing:earnings-preview	public-equity-investing:earnings-preview	编制财报前完整预览报告
+public-equity-investing:meeting-prep	public-equity-investing:meeting-prep	准备投资会前简报材料
+public-equity-investing:long-short-pitch	public-equity-investing:long-short-pitch	撰写面向 PM 的交易提案
+public-equity-investing:public-equity-investing	public-equity-investing:public-equity-investing	公开股票研究工作流总路由
+public-equity-investing:economic-impact-report	public-equity-investing:economic-impact-report	把事件政策宏观冲击映射到上市公司影响
+public-equity-investing:financials-normalizer	public-equity-investing:financials-normalizer	归一化上市公司财务数据
+public-equity-investing:deck-report-qc	public-equity-investing:deck-report-qc	对分析报告做首轮质检
+public-equity-investing:model-audit-tieout	public-equity-investing:model-audit-tieout	审计已有投资模型与电子表格
+public-equity-investing:initiating-coverage	public-equity-investing:initiating-coverage	撰写首次覆盖研究报告
+public-equity-investing:company-tearsheet	public-equity-investing:company-tearsheet	制作有数据源支撑的公司单页速览
+public-equity-investing:user-context	public-equity-investing:user-context	管理投资插件的本地用户上下文与来源设置
+public-equity-investing:three-statement-model-builder	public-equity-investing:three-statement-model-builder	构建三表财务模型工作簿
+public-equity-investing:memo-builder	public-equity-investing:memo-builder	起草评审正式投资备忘录
+public-equity-investing:dcf-model-builder	public-equity-investing:dcf-model-builder	构建 DCF 估值模型工作簿
+public-equity-investing:thesis-tracker	public-equity-investing:thesis-tracker	建立更新投资论点跟踪器
+public-equity-investing:catalyst-calendar	public-equity-investing:catalyst-calendar	构建公开股票催化剂日历
+public-equity-investing:event-driven-analyzer	public-equity-investing:event-driven-analyzer	分析事件路径概率与预期收益
+shopify:shopify-pos-ui	shopify:shopify-pos-ui	用 Shopify POS UI 组件构建零售收银应用
+shopify:shopify-onboarding-merchant	shopify:shopify-onboarding-merchant	AI 助手连接设置 Shopify 店铺
+shopify:shopify-functions	shopify:shopify-functions	用 Shopify Functions 定制后端逻辑
+shopify:shopify-custom-data	shopify:shopify-custom-data	用 Metafields/Metaobjects 建模存储自定义数据
+shopify:ucp	shopify:ucp	用 UCP CLI 检索比价购买追踪商品
+shopify:shopify-polaris-checkout-extensions	shopify:shopify-polaris-checkout-extensions	在结账流程各节点构建自定义功能
+shopify:shopify-app-store-review	shopify:shopify-app-store-review	提交前检查 Shopify 应用合规性
+shopify:shopify-polaris-app-home	shopify:shopify-polaris-app-home	用 Polaris 构建嵌入后台的应用界面
+shopify:shopify-polaris-admin-extensions	shopify:shopify-polaris-admin-extensions	在 Shopify 后台添加自定义操作与区块
+shopify:shopify-onboarding-dev	shopify:shopify-onboarding-dev	Shopify 开发入门：应用/主题/店铺搭建
+shopify:shopify-partner	shopify:shopify-partner	Partner API 编程访问合作伙伴数据
+shopify:shopify-liquid	shopify:shopify-liquid	Liquid 模板语言：店铺动态内容
+shopify:shopify-payments-apps	shopify:shopify-payments-apps	Payments Apps API 集成支付方案
+shopify:shopify-use-shopify-cli	shopify:shopify-use-shopify-cli	需要立即运行修复时用 Shopify CLI
+shopify:shopify-customer	shopify:shopify-customer	Customer Account API 供客户访问自有数据
+shopify:shopify-dev	shopify:shopify-dev	检索 Shopify 开发者文档
+shopify:shopify-admin	shopify:shopify-admin	编写 Admin GraphQL 查询与变更
+shopify:shopify-polaris-customer-account-extensions	shopify:shopify-polaris-customer-account-extensions	在客户账户页构建自定义扩展功能
+shopify:shopify-storefront-graphql	shopify:shopify-storefront-graphql	自定义店面用 GraphQL 直接取数与购物车
+shopify:shopify-hydrogen	shopify:shopify-hydrogen	Hydrogen 店面实现食谱
+remotion:remotion-maps	remotion:remotion-maps	Remotion 地图动画知识
+remotion:remotion-multimedia	remotion:remotion-multimedia	与 Mediabunny 交互
+remotion:remotion-markup	remotion:remotion-markup	内容、动画与特效最佳实践
+remotion:remotion-saas	remotion:remotion-saas	用 Remotion 构建应用
+remotion:remotion-upgrade	remotion:remotion-upgrade	升级 Remotion 及相关包
+remotion:remotion-interactivity	remotion:remotion-interactivity	为交互性组织 Remotion 标记结构
+remotion:remotion-studio	remotion:remotion-studio	预览 Remotion 视频
+remotion:remotion-best-practices	remotion:remotion-best-practices	Remotion 技能总路由
+remotion:remotion-captions	remotion:remotion-captions	字幕的转写、显示与动画
+remotion:remotion-docs	remotion:remotion-docs	检索 Remotion 文档
+remotion:remotion-create	remotion:remotion-create	创建新的 Remotion 视频
+remotion:remotion-render	remotion:remotion-render	导出 Remotion 视频
+figma:figma-use-figjam	figma:figma-use-figjam	在 FigJam 场景下使用 Figma use_figma 工具
+figma:figma-generate-design	figma:figma-generate-design	把应用页面/多段布局写入 Figma 设计稿
+figma:figma-code-connect	figma:figma-code-connect	创建维护 Figma Code Connect 组件映射模板
+figma:figma-design-to-code	figma:figma-design-to-code	调用 get_design_context 前必读的设计实现前置技能
+figma:figma-generate-library	figma:figma-generate-library	从代码库在 Figma 中构建专业设计系统
+figma:figma-swiftui	figma:figma-swiftui	SwiftUI 与 Figma 设计双向转换
+figma:figma-create-new-file	figma:figma-create-new-file	调用 create_new_file 前必读的新建文件前置技能
+figma:figma-use-motion	figma:figma-use-motion	用 use_figma 给 Figma 节点做动效的关键帧上下文
+figma:figma-generate-diagram	figma:figma-generate-diagram	调用 generate_diagram 前必读的图表生成前置技能
+figma:figma-implement-motion	figma:figma-implement-motion	把 Figma 动效设计转为生产级动画代码
+figma:figma-use-slides	figma:figma-use-slides	在 Slides 场景下使用 Figma use_figma 工具
+figma:figma-use	figma:figma-use	调用 use_figma 前必读的基础前置技能
+openai-developers:chatgpt-app-submission	openai-developers:chatgpt-app-submission	审查并生成 ChatGPT Apps 提交清单与测试用例
+openai-developers:openai-api-troubleshooting	openai-developers:openai-api-troubleshooting	分类诊断 OpenAI API 请求失败原因并给出后续
+openai-developers:build-chatgpt-app	openai-developers:build-chatgpt-app	构建调试 ChatGPT Apps SDK 应用（MCP+UI）
+openai-developers:agents-sdk	openai-developers:agents-sdk	从 Codex 构建部署评测 OpenAI Agents SDK 应用
+openai-developers:openai-platform-api-key	openai-developers:openai-platform-api-key	构建运行调试 OpenAI 或通用 AI 应用/脚本/工具
+ngs-analysis:ngs-dna-somatic-variants	ngs-analysis:ngs-dna-somatic-variants	运行规划肿瘤体细胞变异检测流程
+ngs-analysis:ngs-bulk-rnaseq-differential-expression	ngs-analysis:ngs-bulk-rnaseq-differential-expression	从计数矩阵做批量 RNA-seq 差异表达分析
+ngs-analysis:ngs-dna-umi-panel-variants	ngs-analysis:ngs-dna-umi-panel-variants	运行 UMI/分子条形码靶向 DNA 变异流程
+ngs-analysis:ngs-fastq-qc	ngs-analysis:ngs-fastq-qc	校验 FASTQ 并执行 FastQC/MultiQC 质控与裁剪
+ngs-analysis:ngs-chip-cutrun-peaks-qc	ngs-analysis:ngs-chip-cutrun-peaks-qc	运行 ChIP-seq/CUT&RUN/CUT&Tag 峰检测流程
+ngs-analysis:scrna-seq-qc	ngs-analysis:scrna-seq-qc	处理质控注释可视化单细胞 RNA-seq 数据
+ngs-analysis:ngs-bulk-rnaseq	ngs-analysis:ngs-bulk-rnaseq	把批量 RNA-seq 请求分派到质控或差异分析
+ngs-analysis:ngs-dna-variant-calling	ngs-analysis:ngs-dna-variant-calling	把 DNA 变异请求分派到种系/体细胞/UMI 流程
+ngs-analysis:ngs-bulk-rnaseq-counts-qc	ngs-analysis:ngs-bulk-rnaseq-counts-qc	从 FASTQ 处理到计数矩阵的批量 RNA-seq 流程
+ngs-analysis:ngs-atacseq-peaks-qc	ngs-analysis:ngs-atacseq-peaks-qc	运行 ATAC-seq 质控、比对与峰检测流程
+ngs-analysis:ngs-scrna-seq	ngs-analysis:ngs-scrna-seq	把单细胞 FASTQ 路由到公开计数生成流程
+ngs-analysis:ngs-amplicon-microbiome	ngs-analysis:ngs-amplicon-microbiome	启动 16S/ITS 等标记基因扩增子微生物组流程
+ngs-analysis:ngs-dna-germline-variants	ngs-analysis:ngs-dna-germline-variants	运行深度种系 WGS/WES/家系变异检测流程
+ngs-analysis:ngs-runtime-env	ngs-analysis:ngs-runtime-env	检查公开 NGS 工具是否已存在再决定安装
+ngs-analysis:ngs-bcl-to-fastq	ngs-analysis:ngs-bcl-to-fastq	校验 Illumina BCL 运行目录并规划拆分
+ngs-analysis:ngs-shotgun-metagenomics	ngs-analysis:ngs-shotgun-metagenomics	启动宏基因组质控与物种/功能谱分析流程
+ngs-analysis:ngs-epigenomics-peaks	ngs-analysis:ngs-epigenomics-peaks	把表观基因组请求分派到对应峰检测流程
+ngs-analysis:ngs-analysis-router	ngs-analysis:ngs-analysis-router	把测序数据请求路由到正确的 NGS 分析技能
+chatcut:connect-chatcut-desktop	chatcut:connect-chatcut-desktop	安装修复 ChatCut Desktop 与 MCP 连接
+higgsfield:narrator	higgsfield:narrator	为固定视频窗口生成专业级配音旁白
+higgsfield:faceless-channel	higgsfield:faceless-channel	制作多场景无人出镜解说视频
+higgsfield:subtitles	higgsfield:subtitles	为成片烧录 Whisper 时间轴字幕
+build-web-data-visualization:node-link-and-diagram-layout	build-web-data-visualization:node-link-and-diagram-layout	为节点连线图选择应用自动布局策略
+build-web-data-visualization:gantt-chart-visualization	build-web-data-visualization:gantt-chart-visualization	设计实现甘特图与项目排期可视化
+build-web-data-visualization:scrollytelling-and-parallax-data-visualization	build-web-data-visualization:scrollytelling-and-parallax-data-visualization	设计实现视差滚动与叙事型数据可视化
+build-web-data-visualization:grammar-of-graphics-and-declarative-visualization	build-web-data-visualization:grammar-of-graphics-and-declarative-visualization	用声明式语法构建数据可视化
+build-web-data-visualization:dashboards-and-real-time-visualization	build-web-data-visualization:dashboards-and-real-time-visualization	设计仪表盘与实时可视化系统
+build-web-data-visualization:canvas2d-data-visualization	build-web-data-visualization:canvas2d-data-visualization	用 Canvas2D 渲染高性能数据可视化
+build-web-data-visualization:geospatial-and-cartographic-visualization	build-web-data-visualization:geospatial-and-cartographic-visualization	设计地理空间与地图类可视化
+build-web-data-visualization:typescript-data-visualization-engineering	build-web-data-visualization:typescript-data-visualization-engineering	构建 TypeScript 类型化数据可视化
+build-web-data-visualization:reports-pdfs-and-slide-automation	build-web-data-visualization:reports-pdfs-and-slide-automation	排版导出富数据报告与文档
+build-web-data-visualization:accessibility-and-inclusive-visualization	build-web-data-visualization:accessibility-and-inclusive-visualization	让数据可视化无障碍且包容
+build-web-data-visualization:testing-data-visualizations	build-web-data-visualization:testing-data-visualizations	测试数据可视化与仪表盘
+build-web-data-visualization:d3-data-visualization	build-web-data-visualization:d3-data-visualization	用 D3 构建自定义数据可视化
+build-web-data-visualization:visualization-strategy-and-critique	build-web-data-visualization:visualization-strategy-and-critique	为数据集与目标选择布局并评审可视化
+build-web-data-visualization:uml-and-software-architecture-visualization	build-web-data-visualization:uml-and-software-architecture-visualization	设计实现评审 UML 类软件架构图
+build-web-data-visualization:react-and-nextjs-data-visualization	build-web-data-visualization:react-and-nextjs-data-visualization	把数据可视化集成进 React/Next.js 应用
+build-web-data-visualization:data-visualization	build-web-data-visualization:data-visualization	路由网页数据可视化各类工作
+build-web-data-visualization:statistical-and-uncertainty-visualization	build-web-data-visualization:statistical-and-uncertainty-visualization	设计统计诚实且体现不确定性的可视化
+build-web-data-visualization:threejs-data-visualization	build-web-data-visualization:threejs-data-visualization	用 Three.js/deck.gl 等渲染 WebGL 可视化
+airtable:airtable-overview	airtable:airtable-overview	解释 Airtable 概念与数据结构
+airtable:airtable-filters	airtable:airtable-filters	按字段值过滤检索 Airtable 记录
+airtable:airtable-cli	airtable:airtable-cli	通过 CLI 读写管理 Airtable 库表与记录
+product-design:research	product-design:research	快速做有源可依的 UX 问题调研
+product-design:url-to-code	product-design:url-to-code	把线上 URL 克隆成可运行的本地前端
+product-design:share	product-design:share	用偏好的部署工具分享可运行原型
+product-design:image-to-code	product-design:image-to-code	把设计图/截图/参考图实现为忠实前端
+product-design:design-qa	product-design:design-qa	对产品原型做渲染对比的内部 QA 检查
+product-design:user-context	product-design:user-context	加载管理产品设计保存的用户上下文
+product-design:audit	product-design:audit	审计评审产品流程与用户旅程体验
+product-design:ideate	product-design:ideate	从设计简报生成品牌化替代方案与变体
+product-design:get-context	product-design:get-context	创意工作前强制澄清产品与目标的简报门槛
+product-design:index	product-design:index	产品设计插件总入口：探索/调研/审计/克隆
+canva:canva-branded-presentation	canva:canva-branded-presentation	按大纲简报生成品牌化 Canva 演示
+canva:canva-resize-for-social-media	canva:canva-resize-for-social-media	把 Canva 设计调整为各社媒尺寸
+canva:canva-implement-feedback	canva:canva-implement-feedback	落实评审者对 Canva 设计的评论意见
+canva:canva-translate-design	canva:canva-translate-design	把 Canva 设计整体翻译成另一语言
+canva:canva-design-feedback	canva:canva-design-feedback	读取 Canva 设计并给出结构化设计反馈
+canva:canva-bulk-create	canva:canva-bulk-create	用品牌模板按表格数据批量生成 Canva 设计
+canva:canva-brand-check	canva:canva-brand-check	对照品牌套件检查 Canva 设计偏差
+canva:canva-edit-design	canva:canva-edit-design	编辑修改现有 Canva 设计的文本与素材
+codex-security:define-security-policy	codex-security:define-security-policy	定义评审更新仓库 SECURITY.md 指引
+codex-security:triage-finding	codex-security:triage-finding	导入解析已有安全扫描结论与漏洞工单
+codex-security:propose-security-hardening	codex-security:propose-security-hardening	产出有证据支撑的安全加固方案建议
+codex-security:security-scan	codex-security:security-scan	对仓库或指定路径做标准单遍安全审计
+codex-security:vulnerability-writeup	codex-security:vulnerability-writeup	把漏洞笔记与 PoC 整理成经验证的披露报告
+codex-security:fix-finding	codex-security:fix-finding	修复并验证已确认的安全漏洞
+codex-security:verify-fix	codex-security:verify-fix	验证安全修复是否真正 remediate 漏洞
+codex-security:security-diff-scan	codex-security:security-diff-scan	评审 PR/提交/补丁的安全漏洞
+codex-security:validation	codex-security:validation	判定候选安全结论是否真实有效
+codex-security:threat-model	codex-security:threat-model	创建更新维护仓库威胁模型
+codex-security:assess-patch-risk	codex-security:assess-patch-risk	评估补丁产物的影响与自动合并资格
+codex-security:finding-discovery	codex-security:finding-discovery	在仓库或变更中发现候选安全结论
+codex-security:track-findings	codex-security:track-findings	把安全结论跟踪到 Linear/Jira/GitHub
+codex-security:deep-security-scan	codex-security:deep-security-scan	做深度多遍全仓库安全扫描
+codex-security:attack-path-analysis	codex-security:attack-path-analysis	从源头到汇点追踪攻击路径并定级
+test-android-apps:android-emulator-qa	test-android-apps:android-emulator-qa	在模拟器中验证 Android 功能流程
+test-android-apps:android-performance	test-android-apps:android-performance	采集解读 Android 性能证据
+creative-production:intake	creative-production:intake	Creative Production 能力总览入口
+creative-production:produce	creative-production:produce	创作打磨广告社媒产品图等视觉创意
+ponytail:ponytail-review	ponytail:ponytail-review	只找过度设计的代码评审：该删什么
+ponytail:ponytail	ponytail:ponytail	强制最懒可行方案：最少最简代码
+ponytail:ponytail-audit	ponytail:ponytail-audit	全仓库过度设计审计与简化清单
+ponytail:ponytail-debt	ponytail:ponytail-debt	收集 ponytail 注释生成技术债台账
+ponytail:ponytail-help	ponytail:ponytail-help	ponytail 全部模式与命令速查卡
+ponytail:ponytail-gain	ponytail:ponytail-gain	记分板展示 ponytail 实测收益：更少代码、更低成本、更快
+open-code-review-codex:open-code-review-delegate	open-code-review-codex:open-code-review-delegate	OCR 委托模式：由宿主智能体执行代码评审
+open-code-review-codex:open-code-review	open-code-review-codex:open-code-review	用 ocr CLI 对 Git 变更做 AI 代码评审
+raffle-winner-picker:raffle-winner-picker	raffle-winner-picker:raffle-winner-picker	从列表、表格或 Google Sheets 随机抽取抽奖获奖者
+linear:linear	linear:linear	读取、创建和更新 Linear 议题、项目与团队工作流
+notion-spec-to-implementation:notion-spec-to-implementation	notion-spec-to-implementation:notion-spec-to-implementation	把 Notion 规格转为实现计划、任务与进度跟踪
+gh-address-comments:gh-address-comments	gh-address-comments:gh-address-comments	用 gh 响应当前分支开放 PR 上的评审/议题评论
+invoice-organizer:invoice-organizer	invoice-organizer:invoice-organizer	自动整理发票与票据以便报税：提取信息、重命名归档
+changelog-generator:changelog-generator	changelog-generator:changelog-generator	从 Git 提交历史生成面向用户的发布说明
+paperjsx:paperjsx	paperjsx:paperjsx	用 PaperJSX 从结构化 JSON 生成 PPT/Word/Excel/PDF
+pr-review-ci-fix:pr-review-ci-fix	pr-review-ci-fix:pr-review-ci-fix	自动评审 PR 并循环修复 CI 直至检查全绿
+content-research-writer:content-research-writer	content-research-writer:content-research-writer	以调研、引用、大纲迭代与实时反馈辅助高质量写作
+tailored-resume-generator:tailored-resume-generator	tailored-resume-generator:tailored-resume-generator	分析职位描述并生成突出相关经验的定制简历
+create-plan:create-plan	create-plan:create-plan	为编码任务创建简明计划
+skill-installer:skill-installer	skill-installer:skill-installer	从精选列表或 GitHub 仓库安装 Codex skill 到本地
+meeting-insights-analyzer:meeting-insights-analyzer	meeting-insights-analyzer:meeting-insights-analyzer	分析会议记录，揭示行为模式与可行动的沟通反馈
+notion-meeting-intelligence:notion-meeting-intelligence	notion-meeting-intelligence:notion-meeting-intelligence	结合 Notion 上下文与调研准备会议材料与议程
+datadog-logs:datadog-logs	datadog-logs:datadog-logs	从命令行查询过滤 Datadog 日志并导出结构化 JSON
+developer-growth-analysis:developer-growth-analysis	developer-growth-analysis:developer-growth-analysis	分析近期编码模式并从 HackerNews 策展学习资源上报 Slack
+helium-mcp:helium-mcp	helium-mcp:helium-mcp	实时新闻偏见评分、股票加密行情、期权定价与梗图搜索
+internal-comms:internal-comms	internal-comms:internal-comms	按公司格式撰写各类内部沟通（状态报告、公告、通讯）
+support-ticket-triage:support-ticket-triage	support-ticket-triage:support-ticket-triage	支持工单分类定级并草拟回复与可复现步骤
+webapp-testing:webapp-testing	webapp-testing:webapp-testing	用 Playwright 测试本地网页应用
+notion-knowledge-capture:notion-knowledge-capture	notion-knowledge-capture:notion-knowledge-capture	把对话和决策沉淀为结构化 Notion 页面
+mcp-builder:mcp-builder	mcp-builder:mcp-builder	构建高质量 MCP 服务器指南（Python FastMCP 或 Node SDK）
+connect-apps:connect-apps	connect-apps:connect-apps	通过 Composio CLI 把 Claude 连到 Gmail/Slack 等 1000+ 应用
+skill-share:skill-share	skill-share:skill-share	创建新 skill 并经 Rube 自动分享到 Slack 促进协作
+brand-guidelines:brand-guidelines	brand-guidelines:brand-guidelines	应用 OpenAI 品牌色与字体以匹配 Codex/OpenAI 风格
+slack-gif-creator:slack-gif-creator	slack-gif-creator:slack-gif-creator	制作通过尺寸校验的 Slack 动画 GIF 与表情动画
+connect:connect	connect:connect	通过 Composio CLI 让 Codex 连接任意应用并执行操作
+agent-deep-links:agent-deep-links	agent-deep-links:agent-deep-links	构建调试 Codex/Cursor/VS Code 等工具的深链接
+codebase-migrate:codebase-migrate	codebase-migrate:codebase-migrate	协调议题跟踪、分批 PR 与 CI 执行大规模迁移重构
+notion-research-documentation:notion-research-documentation	notion-research-documentation:notion-research-documentation	跨 Notion 调研并综合成简报、对比或报告
+spreadsheet-formula-helper:spreadsheet-formula-helper	spreadsheet-formula-helper:spreadsheet-formula-helper	编写调试 Excel/Google Sheets 公式、透视表与数组公式
+gh-fix-ci:gh-fix-ci	gh-fix-ci:gh-fix-ci	用 gh 拉取失败 Actions 日志，先出修复计划再实施
+langsmith-fetch:langsmith-fetch	langsmith-fetch:langsmith-fetch	拉取 LangSmith 执行轨迹调试 LangChain/LangGraph 智能体
+skill-creator:skill-creator	skill-creator:skill-creator	创建或更新 skill 以扩展 Codex 专业能力的指南
+meeting-notes-and-actions:meeting-notes-and-actions	meeting-notes-and-actions:meeting-notes-and-actions	把会议记录整理成含决策、风险与行动项的摘要
+deploy-pipeline:deploy-pipeline	deploy-pipeline:deploy-pipeline	跨 Stripe/Supabase/Vercel 一键端到端部署并验证
+lead-research-assistant:lead-research-assistant	lead-research-assistant:lead-research-assistant	分析业务并检索目标公司，输出高质量销售线索
+competitive-ads-extractor:competitive-ads-extractor	competitive-ads-extractor:competitive-ads-extractor	从广告库提取分析竞品广告，启发自有投放策略
+canvas-design:canvas-design	canvas-design:canvas-design	按设计理念创作海报与视觉作品（PNG/PDF）并避免侵权
+file-organizer:file-organizer	file-organizer:file-organizer	按上下文整理文件夹、查重重命名并自动清理
+theme-factory:theme-factory	theme-factory:theme-factory	用 10 个预设或即时生成的主题统一美化产出物
+email-draft-polish:email-draft-polish	email-draft-polish:email-draft-polish	按目标受众与语气起草、改写和精简邮件
+template-skill:template-skill	template-skill:template-skill	模板占位：请替换为 skill 描述与使用时机
+domain-name-brainstormer:domain-name-brainstormer	domain-name-brainstormer:domain-name-brainstormer	生成域名创意并跨多 TLD 检查可用性
+image-enhancer:image-enhancer	image-enhancer:image-enhancer	提升图片分辨率、锐度与清晰度，尤宜截图
+sentry-triage:sentry-triage	sentry-triage:sentry-triage	用 Composio CLI 拉 Sentry 议题详情映射本地源码并定修复
+issue-triage:issue-triage	issue-triage:issue-triage	批量梳理 Linear/Jira 积压：去重、改标签、重指派、汇总
+video-downloader:youtube-downloader	video-downloader:youtube-downloader	按自定义质量与格式下载 YouTube 视频，支持仅下 MP3
+plugins:web-artifacts-builder	plugins:web-artifacts-builder	构建多组件 claude.ai 高级 HTML  artifact
+plugins:webapp-testing	plugins:webapp-testing	用 Playwright 测试本地网页应用
+plugins:xlsx	plugins:xlsx	处理电子表格文件的读写与编辑
+plugins:docx	plugins:docx	创建读取编辑 Word 文档与模板
+plugins:pdf	plugins:pdf	处理 PDF 的读取提取合并拆分与表单
+ponytail-review	ponytail-review	只找过度设计的代码评审：该删什么
+douyin-search	douyin-search	抖音作品查询工具。根据关键词搜索抖音热门爆款作品，支持按日期范围筛选，结果以结构化表格展示。
+52shuku-novel	52shuku-novel	搜索和下载52书库（52shuku.net）的小说并导出 TXT。
+short-drama-review	short-drama-review	审查短剧项目中的原著分析、故事、剧本、视觉设定、图片提示词、分镜、冻结关键帧、视频提示词和已有媒体。
+ponytail	ponytail	强制最懒可行方案：最少最简代码
+short-drama-write	short-drama-write	编写或修订可拍摄的中文短剧、漫剧单集 Markdown 剧本，也负责保留作者原文地规范化现成剧本。
+douyin-prohibited-word	douyin-prohibited-word	检测文案、文件或网页中的抖音违禁词并加粗显示，提供违禁词替换建议和仅替换违禁词后的文案；当用户需要查询抖音平台违禁词、检查抖音笔记文案是否包含敏感词、或希望获得…
+douyin-rise-ranking	douyin-rise-ranking	获取抖音涨粉账号推荐数据，支持日榜/周榜/月榜按分类查询抖音账号涨粉排行，含总粉丝数、涨粉率与粉丝增量；当用户需要查询抖音涨粉榜、分析各领域账号涨粉趋势、了解粉…
+code-redundancy-cleanup	code-redundancy-cleanup	代码冗余消除与优化工具. 系统性清理死代码、重复代码、无用克隆、多余包装层和未使用依赖, 并做行为不变的等价优化(借用代替克隆、迭代器链、内联格式化参数等). …
+code-defect-audit	code-defect-audit	代码缺陷检查与质量审查工具. 对指定文件、模块、PR 或整个变更集做系统性审查: 先跑机器检查(编译警告/lint/测试/诊断), 再按七大缺陷面人工审查(逻辑…
+short-drama-novel-analyze	short-drama-novel-analyze	把长篇小说、连载网文或多集散稿拆成可追溯的原著分析：章节索引、改编价值快评、逐章功能提取、剧情单元与节奏聚合、人物与设定归并，最后给出改编价值判定与分集候选，交…
+ponytail-audit	ponytail-audit	全仓库过度设计审计与简化清单
+douyin-top-account	douyin-top-account	抖音每日最具影响力账号榜单追踪分析工具；日榜每日17:30更新/回溯7天，周榜每周一17:30更新/回溯3周，月榜每月2号9点更新/回溯3月；当用户需要查询抖音…
+douyin-video	douyin-video	抖音无水印视频下载和文案提取工具. 从抖音分享链接获取无水印视频下载链接, 下载视频, 提取视频中的语音文案并自动保存到文件. 适用场景包括获取抖音视频信息, …
+short-drama-produce	short-drama-produce	在创作者明确确认后，执行短剧项目的图片、视频、TTS/配音或时间线音乐生产任务，并把结果与精简运行记录落回项目。
+short-drama-develop	short-drama-develop	将中文小说、短剧或漫剧想法、梗概、改编材料、已有系列笔记或多集完整剧本发展成可追溯的改编方案、戏剧方向、创作简报、导演阐述、故事引擎与分集地图，并按题材与制作形…
+douyin-video-downloader	douyin-video-downloader	抖音账号视频批量下载器 — 输入抖音号，自动拉取账号全部作品并解析无水印下载链接，支持批量一键下载到本地。
+open-code-review-delegate	open-code-review-delegate	OCR 委托模式：由宿主智能体执行代码评审
+novel-art	novel-art	给 AI 短剧出美术设定集（场景 + 叙事道具）：场景的设计意图、一致性锚点、光照时段变体、 空景提示词；道具的戏剧功能、状态变体、尺度参照、白底无手提示词。
+short-drama-factory	short-drama-factory	抖音/红果爆款短剧工业化编剧超级系统 v3.2。
+short-drama	short-drama	基于文件系统初始化和继续短剧或漫剧项目，提供 creator-first 五文档路由、本地 Dashboard、制作形态与 Look Development 决…
+short-drama-video-prompts	short-drama-video-prompts	把短剧分镜和冻结关键帧写成可直接复制的视频提示词 Markdown，也可按用户要求写时间线配乐/主题曲意图。
+anything2explainer	anything2explainer	给一个主题，产出一条黑底 MG 风格（幕底可选星点或点阵波）、有配音字幕章节进度条的科普讲解视频（中文或英文；Remotion 代码动画；时长由用户定，常用 3…
+novel-outline	novel-outline	把一本小说改编成短剧大纲五件套：改编说明、人物表、爽点表、分集梗概、资产清单， 产出 outline.json + Markdown + 单页评审报告（KPI …
+xbiquge-novel	xbiquge-novel	从新笔趣阁（xbiqugew.com）下载小说并导出 TXT。
+short-drama-edit	short-drama-edit	将已生成的短剧镜头剪成成片，记录入出点、镜序、声音、字幕与交付规格。
+ponytail-debt	ponytail-debt	收集 ponytail 注释生成技术债台账
+ponytail-help	ponytail-help	ponytail 全部模式与命令速查卡
+short-drama-storyboard	short-drama-storyboard	把中文短剧剧本和视觉设定写成有戏剧职责、连续性边界与冻结关键帧提示词的分镜 Markdown。
+playlet-douyin-feed	playlet-douyin-feed	短剧-抖音信息源 — 每日扫描抖音短剧爆款内容,按点赞量筛选热门短剧,智能聚类题材方向后生成包含封面、互动数据与创作洞察的HTML日报。
+douyin-daily-hot	douyin-daily-hot	抖音每日最热作品榜查询工具。
+multi-search-engine	multi-search-engine	整合 16 个搜索引擎（7 中文 9 国际），免 API 密钥
+short-drama-image-prompts	short-drama-image-prompts	为短剧人物、造型、地点、道具和状态编写或修改可直接复制的图片提示词 Markdown。
+novel-script	novel-script	给 AI 短剧写剧本：把 novel-outline 的分集梗概落成结构化的场次 + 节拍流（动作节拍与台词行交替）， 台词逐句带说话人与语气，时长逐集按语速确…
+open-code-review	open-code-review	用 ocr CLI 对 Git 变更做 AI 代码评审
+life-decision-guide	life-decision-guide	用《高性价比人生指南》(github.com/eternity4719/HowToLiveBetter) 的正文回答具体的人生决策：该不该做、值不值、怎么选、出…
+fanqie-novel	fanqie-novel	搜索和下载番茄小说（fanqienovel.com）的书籍与章节。
+ponytail-gain	ponytail-gain	记分板展示 ponytail 的实测收益
+character-refs	character-refs	给任何故事里的角色真出参考图（小说改编、自己原创的故事、单独设计一个角色都行，不需要小说原文）： 一段话描述角色，拆成分层字段、补全后确认， 先出一张正面全身锚…
+short-drama-assets	short-drama-assets	从短剧剧本拆出人物/造型、地点/视图、道具/状态和跨场连续性，写成创作者可读的视觉设定。
+douyin-works-crawler	douyin-works-crawler	抖音作品爬取工具，输入抖音名称或抖音ID，通过红狐API广域库获取账号基础信息和近期作品内容列表（支持分页，最多50条/页）。
+novel-storyboard	novel-storyboard	给 AI 短剧出分镜：三层结构——段（一次视频生成，≤15 秒）→ 分镜（段内 2–5 秒的剪切，认领剧本节拍） → 分镜图（每切一张关键帧：主分镜图钉 0.0…
+douyin-content-surge	douyin-content-surge	抖音每日点赞飙升榜查询工具。
+short-drama-knowhow	short-drama-knowhow	维护者专用的短剧 know-how 学习、验证与生命周期治理。
+douyin-hot-trend	douyin-hot-trend	专注于获取抖音最新的热榜数据，每小时更新，包含热点事件、热度值和跳转链接；支持查询近7天、近30天历史热榜，并支持订阅定时推送。
+novel-characters	novel-characters	从小说或短故事里拆出角色表、人物画像、形象提示词、音色提示词， 其中形象提示词含一张角色设定图的完整版面指令（左半身像 + 右全身三视图 + 细节条）， 产出 …
+hypit-rs	hypit-rs	从智能体驱动 hypit-rs 短视频引擎：SVML 脚本到成片渲染

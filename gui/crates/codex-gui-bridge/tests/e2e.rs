@@ -353,6 +353,7 @@ fn thread_list_params() -> ThreadListParams {
     ThreadListParams {
         cursor: None,
         limit: None,
+        excluded_thread_ids: None,
         sort_key: None,
         sort_direction: None,
         model_providers: None,

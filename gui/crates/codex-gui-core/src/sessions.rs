@@ -85,6 +85,9 @@ pub struct ThreadSummary {
     pub status: QuestStatus,
     /// User-visible name once renamed; falls back to the preview.
     pub name: Option<String>,
+    /// Created by the WeChat bridge (`thread_source == "weixin"`); rows
+    /// show a badge so the user can tell chat-originated quests apart.
+    pub from_weixin: bool,
 }
 
 impl ThreadSummary {
@@ -156,6 +159,33 @@ impl Sessions {
         self.threads.len() != before
     }
 
+    /// Ensures the freshly-started thread has a sidebar row.
+    ///
+    /// A `thread/start` thread has no rollout yet, so `thread/list` omits it
+    /// until its first turn lands. Without a row the current quest is
+    /// invisible and looks like it merged into the previous task. Insert a
+    /// placeholder (newest first, matching the server's default order); the
+    /// first `load_sessions` after the turn replaces it with real metadata.
+    /// Returns whether a row was inserted.
+    pub fn ensure_current(&mut self, thread_id: &str, cwd: &str, now: i64) -> bool {
+        if self.threads.iter().any(|thread| thread.id == thread_id) {
+            return false;
+        }
+        self.threads.insert(
+            0,
+            ThreadSummary {
+                id: thread_id.to_string(),
+                preview: String::new(),
+                updated_at: now,
+                cwd: cwd.to_string(),
+                status: QuestStatus::Idle,
+                name: None,
+                from_weixin: false,
+            },
+        );
+        true
+    }
+
     /// Applies one `thread/status/changed` notification; returns whether
     /// the row was present.
     pub fn apply_status(&mut self, thread_id: &str, status: QuestStatus) -> bool {
@@ -205,8 +235,18 @@ impl From<&Thread> for ThreadSummary {
             cwd: thread.cwd.to_string_lossy().into_owned(),
             status: QuestStatus::from(&thread.status),
             name: thread.name.clone(),
+            from_weixin: is_weixin_source(thread),
         }
     }
+}
+
+/// True when the thread's analytics source is the WeChat bridge's marker.
+fn is_weixin_source(thread: &Thread) -> bool {
+    matches!(
+        &thread.thread_source,
+        Some(codex_app_server_protocol::ThreadSource::Feature(kind))
+            if kind == "weixin"
+    )
 }
 
 /// Splits the sidebar inventory into the pinned partition and the

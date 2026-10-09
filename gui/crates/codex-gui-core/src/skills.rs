@@ -265,7 +265,7 @@ fn skill_row(skill: &SkillMetadata) -> SkillRow {
         name: skill.name.clone(),
         description: skill.description.clone(),
         scope: skill.scope,
-        path: skill.path.clone().into(),
+        path: PathBuf::from(skill.path.as_str()),
         enabled: skill.enabled,
         plugin_id: skill.plugin_id.clone(),
     }

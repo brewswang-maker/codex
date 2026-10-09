@@ -1,4 +1,5 @@
 //! Credential-store and login-helper tests (no network).
+#![allow(clippy::expect_used, clippy::panic)]
 
 use pretty_assertions::assert_eq;
 

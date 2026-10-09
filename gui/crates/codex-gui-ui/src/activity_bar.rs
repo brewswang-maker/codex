@@ -30,6 +30,7 @@ const ENTRIES: &[(IconKind, SidebarTab)] = &[
     (IconKind::Debug, SidebarTab::Debug),
     (IconKind::Remote, SidebarTab::Remote),
     (IconKind::Extensions, SidebarTab::Extensions),
+    (IconKind::Weixin, SidebarTab::Weixin),
 ];
 
 /// The icon rail: pane entries on top, settings pinned to the bottom.
