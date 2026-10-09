@@ -59,6 +59,7 @@ pub(super) struct Classification {
     pub(super) reservation: Option<Reservation>,
     pub(super) classification_started_at: Instant,
     pub(super) sampler: Arc<LunaSampler>,
+    pub(super) decisions_sampler: Option<Arc<super::decisions::DecisionsSampler>>,
     pub(super) guardian_config: GuardianV2Config,
     pub(super) score_progress: Arc<GuardianV2ScoreProgress>,
     pub(super) parent_model: Option<Arc<ModelInfo>>,
@@ -105,11 +106,25 @@ enum ClassificationOutcome {
 }
 
 impl Classification {
+    #[tracing::instrument(
+        name = "guardian_background_scoring",
+        level = "debug",
+        skip_all,
+        fields(
+            thread_id = %self.thread_id,
+            turn_id = %self.turn_id,
+            call_id = %self.call_id,
+            tool_call_index = self.tool_call_index,
+            context_mode = self.context_mode.as_str(),
+            retained_conversation = self.reservation.is_some(),
+        )
+    )]
     pub(super) async fn run(self) {
         let Self {
             reservation,
             classification_started_at,
             sampler,
+            decisions_sampler,
             guardian_config,
             score_progress,
             parent_model,
@@ -263,6 +278,8 @@ impl Classification {
             truncations.extend(std::mem::take(&mut context.truncations));
             super::metrics::record_section_costs(metrics.as_deref(), context.section_costs());
         }
+        let mut decisions_task = None;
+        let mut responses_duration = None;
         let mut failure_reason = "invalid_output";
         let mut classification_risk = None;
         let mut classification_finished_at = None;
@@ -307,23 +324,51 @@ impl Classification {
             let result = match transcript {
                 ClassificationContext::Snapshot(context) => {
                     sampling.input = context.into_messages();
-                    sampler.sample(sampling).await
+                    if let Some(decisions_sampler) = decisions_sampler.as_ref() {
+                        decisions_task =
+                            Some(decisions_sampler.spawn(&sampling, sampler.max_input_tokens()));
+                    } else if config
+                        .features
+                        .enabled(codex_features::Feature::GuardianV2DecisionsComparison)
+                    {
+                        super::metrics::record_decisions_comparison_outcome(
+                            metrics.as_deref(),
+                            "skipped",
+                            "not_initialized",
+                        );
+                    }
+                    let sampling_started = Instant::now();
+                    let result = sampler.sample(sampling).await;
+                    responses_duration = Some(sampling_started.elapsed());
+                    result
                 }
+
                 ClassificationContext::Conversation {
                     evidence,
                     reservation,
                 } => {
+                    // The retained prefix is owned by the conversation backend, not this snapshot.
+                    if config
+                        .features
+                        .enabled(codex_features::Feature::GuardianV2DecisionsComparison)
+                    {
+                        super::metrics::record_decisions_comparison_outcome(
+                            metrics.as_deref(),
+                            "skipped",
+                            "unsupported_evidence",
+                        );
+                    }
                     let (ready, score) = tokio::sync::oneshot::channel();
-                    reservation.submit(ConversationRequest {
+                    tokio::spawn(reservation.run(ConversationRequest {
                         evidence,
                         sampling,
-                        reset_token_limit: guardian_config
-                            .async_classifier_conversation_token_limit,
+                        reset_token_limit:
+                            guardian_config.async_classifier_conversation_token_limit,
                         ready,
                         authorization: score_authorization.clone(),
                         thread: Arc::clone(&thread),
                         metrics: metrics.clone(),
-                    });
+                    }));
                     score.await.unwrap_or(Err(LunaSamplerError::Superseded))
                 }
             };
@@ -430,12 +475,50 @@ impl Classification {
         if matches!(result, Ok(ClassificationOutcome::Scored)) {
             truncations.emit(metrics.as_deref());
         }
+        if matches!(result, Ok(ClassificationOutcome::Superseded))
+            && let Some(task) = decisions_task.take()
+        {
+            drop(task);
+            super::metrics::record_decisions_comparison_outcome(
+                metrics.as_deref(),
+                "skipped",
+                "superseded",
+            );
+        }
+        // Only compare against a score accepted by the authoritative publication path.
+        let baseline_risk = if matches!(result, Ok(ClassificationOutcome::Scored)) {
+            classification_risk
+        } else {
+            None
+        };
         if let Err(error) = result {
             event_sink.emit_warning(ExtensionWarning {
                 thread_id,
                 turn_id: Some(turn_id),
                 message: format!("Guardian V2 risk scoring failed: {error}"),
             });
+        }
+        if let Some(decisions_task) = decisions_task {
+            super::metrics::record_decisions_comparison(
+                decisions_task.finish().await,
+                baseline_risk.zip(responses_duration),
+                metrics.as_deref(),
+            );
+        } else if config
+            .features
+            .enabled(codex_features::Feature::GuardianV2DecisionsComparison)
+            && let Some(risk) = baseline_risk
+            && let Some(metrics) = metrics.as_deref()
+        {
+            metrics.counter(
+                "codex.guardian_v2.decisions_comparison.comparison",
+                /*inc*/ 1,
+                &[
+                    ("comparison", "unavailable"),
+                    ("responses", risk),
+                    ("decisions", "unavailable"),
+                ],
+            );
         }
     }
 }

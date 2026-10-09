@@ -441,7 +441,6 @@ pub(super) async fn run_main_inner(
         model_provider: model_provider_override.clone(),
         codex_self_exe: arg0_paths.codex_self_exe.clone(),
         codex_linux_sandbox_exe: arg0_paths.codex_linux_sandbox_exe.clone(),
-        main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
         show_raw_agent_reasoning: cli.oss.then_some(true),
         bypass_hook_trust: cli.bypass_hook_trust.then_some(true),
         additional_writable_roots: additional_dirs,
@@ -532,6 +531,13 @@ pub(super) async fn run_main_inner(
         // The Bedrock wizard configures its provider through the embedded server.
         daemon_exclusion = Some("Bedrock sign-in");
         app_server_target = AppServerTarget::Embedded;
+    }
+    if auto_start_daemon
+        && daemon_exclusion.is_none()
+        && matches!(&app_server_target, AppServerTarget::Embedded)
+        && daemon_startup::uses_wsl_drvfs(&codex_home)
+    {
+        daemon_exclusion = Some(daemon_startup::WSL_DRVFS_EXCLUSION);
     }
     let mut daemon_features = daemon_startup::server_features(&cli_kv_overrides);
     // Disabling shared services requires confirmation, even on a fresh auto-start.

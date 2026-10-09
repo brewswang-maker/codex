@@ -60,19 +60,26 @@ pub const HTTP_REQUEST_BODY_DELTA_METHOD: &str = "http/request/bodyDelta";
 /// Maximum decoded response-body bytes carried by one streamed HTTP notification.
 pub const MAX_HTTP_BODY_DELTA_BYTES: usize = 1024 * 1024;
 
+/// Shared immutable bytes, encoded as a base64 string on the wire.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct ByteChunk(#[serde(with = "base64_bytes")] pub Vec<u8>);
+pub struct ByteChunk(#[serde(with = "base64_bytes")] pub Arc<Vec<u8>>);
 
 impl ByteChunk {
     pub fn into_inner(self) -> Vec<u8> {
-        self.0
+        Arc::unwrap_or_clone(self.0)
     }
 }
 
 impl From<Vec<u8>> for ByteChunk {
     fn from(value: Vec<u8>) -> Self {
-        Self(value)
+        Self(Arc::new(value))
+    }
+}
+
+impl AsRef<[u8]> for ByteChunk {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_slice()
     }
 }
 
@@ -276,7 +283,7 @@ impl EnvironmentInfo {
                 environment_config_read: true,
                 http_header_env_vars: true,
                 sandboxed_file_streaming: true,
-                file_write_streaming: false,
+                file_write_streaming: true,
                 shell_snapshot_v2: cfg!(unix),
                 windows_mxc,
                 linux_root_write_preserves_devices: cfg!(target_os = "linux"),
@@ -306,7 +313,7 @@ impl From<DetectedShell> for ShellInfo {
     }
 }
 
-/// Optional tool attribution for executor telemetry, not authorization.
+/// Optional tool attribution for executor telemetry and child environments, not authorization.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecMetadata {
@@ -1193,6 +1200,7 @@ mod base64_bytes {
     use serde::Deserialize;
     use serde::Deserializer;
     use serde::Serializer;
+    use std::sync::Arc;
 
     pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -1201,13 +1209,14 @@ mod base64_bytes {
         serializer.serialize_str(&BASE64_STANDARD.encode(bytes))
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Arc<Vec<u8>>, D::Error>
     where
         D: Deserializer<'de>,
     {
         let encoded = String::deserialize(deserializer)?;
         BASE64_STANDARD
             .decode(encoded)
+            .map(Arc::new)
             .map_err(serde::de::Error::custom)
     }
 }
@@ -1215,6 +1224,7 @@ mod base64_bytes {
 #[cfg(test)]
 mod tests {
     use super::CapabilityRootDiscoverRequest;
+    use super::WireExecParams;
     #[test]
     fn discovery_v2_support_defaults_off_for_older_executors() -> serde_json::Result<()> {
         let legacy: super::EnvironmentCapabilities = serde_json::from_value(serde_json::json!({}))?;
@@ -1260,9 +1270,28 @@ mod tests {
     use codex_protocol::permissions::FileSystemSandboxPolicy;
     use codex_protocol::permissions::FileSystemSpecialPath;
     use codex_protocol::permissions::NetworkSandboxPolicy;
+    use codex_protocol::sandbox::SandboxOverride;
     use codex_utils_path_uri::PathUri;
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
+
+    #[test]
+    fn shared_byte_chunks_preserve_base64_and_owned_bytes() {
+        let chunk = super::ByteChunk::from(vec![0, 255, 10]);
+        let shared = chunk.clone();
+        assert_eq!(serde_json::to_string(&shared).unwrap(), r#""AP8K""#);
+        assert_eq!(
+            serde_json::from_str::<super::ByteChunk>(r#""AP8K""#).unwrap(),
+            chunk,
+        );
+
+        let mut owned = shared.into_inner();
+        owned[0] = 1;
+        assert_eq!(
+            (owned, chunk.into_inner()),
+            (vec![1, 255, 10], vec![0, 255, 10])
+        );
+    }
 
     #[test]
     fn exec_params_keeps_proxy_launch_separate_from_sandbox_facts() {
@@ -1351,6 +1380,35 @@ mod tests {
         assert!(legacy_serialized.get("threadId").is_none());
         assert!(legacy_serialized.get("toolCallId").is_none());
         assert!(legacy_serialized.get("metadata").is_none());
+
+        for sandbox_override in [
+            SandboxOverride::NoOverride,
+            SandboxOverride::EscalatedSandboxWithRestrictions,
+            SandboxOverride::BypassSandboxFirstAttempt,
+        ] {
+            let mut params = params.clone();
+            let mut sandbox = FileSystemSandboxContext::from_permission_profile(
+                PermissionProfile::read_only(),
+                params.cwd.clone(),
+            );
+            sandbox.sandbox_override = sandbox_override;
+            params.sandbox = Some(sandbox);
+            let mut json = serde_json::to_value(&params).expect("serialize sandboxed exec");
+            assert_eq!(
+                json["sandbox"].get("sandboxOverride").is_none(),
+                sandbox_override.is_no_override(),
+            );
+            let wire: WireExecParams = serde_json::from_value(json.clone()).expect("wire exec");
+            assert_eq!(ExecParams::from(wire), params);
+
+            json["sandbox"]
+                .as_object_mut()
+                .unwrap()
+                .remove("sandboxOverride");
+            params.sandbox.as_mut().unwrap().sandbox_override = SandboxOverride::NoOverride;
+            let legacy: WireExecParams = serde_json::from_value(json).expect("legacy wire exec");
+            assert_eq!(ExecParams::from(legacy), params);
+        }
     }
 
     #[test]
@@ -1752,6 +1810,7 @@ mod tests {
         let workspace = PathUri::parse("file:///workspace/other").expect("selected workspace");
         let path = cwd.join("note.txt").expect("read path");
         let sandbox = FileSystemSandboxContext {
+            sandbox_override: SandboxOverride::EscalatedSandboxWithRestrictions,
             workspace_roots: vec![workspace],
             ..FileSystemSandboxContext::from_permission_profile(PermissionProfile::Disabled, cwd)
         };

@@ -1,8 +1,9 @@
 //! Classify and integrate composer pastes and capture raw paste tabs before completion or submission.
 //! Multiline pastes on a line beginning with `> ` continue that prefix after every newline,
-//! including blank and trailing lines. This happens before large pastes are collapsed, so their
-//! expanded text retains the quoting. Two unquoted newlines after the inserted text or placeholder
-//! leave the cursor in the next Markdown block, including in embedded answer fields.
+//! including blank lines, but not after a single trailing newline. This happens before large pastes
+//! are collapsed, so their expanded text retains the quoting. Two unquoted newlines after the
+//! inserted text or placeholder leave the cursor in the next Markdown block, including in embedded
+//! answer fields.
 //! Provisional startup input, search queries, and shell input remain literal.
 //! Paste classification and insertion share one textarea edit target, including selection replacement.
 
@@ -138,6 +139,7 @@ impl ChatComposer {
             query.editor.insert_str(&pasted);
             return true;
         }
+        self.draft.textarea_state.get_mut().follow_cursor();
         let started_vim_edit = self.begin_direct_vim_edit();
         let elements_before = self.draft.textarea.element_payloads();
         let target = self.draft.textarea.edit_target();
@@ -148,6 +150,10 @@ impl ChatComposer {
             && current_line.starts_with("> ")
             && pasted.contains('\n');
         let pasted = if is_blockquote {
+            let pasted = pasted
+                .strip_suffix('\n')
+                .filter(|pasted| !pasted.is_empty())
+                .unwrap_or(pasted.as_ref());
             std::borrow::Cow::Owned(pasted.replace('\n', "\n> "))
         } else {
             pasted
