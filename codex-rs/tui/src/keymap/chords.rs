@@ -394,23 +394,29 @@ Reduce `tui.keymap.global.leader` alternatives or `leader ...` bindings."
         action: KeymapActionId,
         bindings: &[KeyBinding],
     ) -> Option<crate::key_hint::ShortcutHint> {
-        if let Some(spec) = self.configured_specs(action).and_then(|specs| {
-            specs
-                .iter()
-                .find(|spec| !spec.starts_with("leader ") || !self.leader.is_empty())
+        if let Some(hint) = self.configured_specs(action).and_then(|specs| {
+            specs.iter().find_map(|spec| {
+                if let Some((prefix, completion)) = spec.split_once(' ') {
+                    Some(crate::key_hint::ShortcutHint::Chord {
+                        prefix: if prefix == "leader" {
+                            *self.leader.first()?
+                        } else {
+                            parse_keybinding(prefix)?
+                        },
+                        completion: parse_keybinding(completion)?,
+                    })
+                } else {
+                    parse_keybinding(spec)
+                        .filter(|configured| {
+                            bindings.iter().any(|binding| {
+                                binding.normalized_parts() == configured.normalized_parts()
+                            })
+                        })
+                        .map(crate::key_hint::ShortcutHint::Single)
+                }
+            })
         }) {
-            return if let Some((prefix, completion)) = spec.split_once(' ') {
-                Some(crate::key_hint::ShortcutHint::Chord {
-                    prefix: if prefix == "leader" {
-                        *self.leader.first()?
-                    } else {
-                        parse_keybinding(prefix)?
-                    },
-                    completion: parse_keybinding(completion)?,
-                })
-            } else {
-                parse_keybinding(spec).map(crate::key_hint::ShortcutHint::Single)
-            };
+            return Some(hint);
         }
 
         super::primary_binding(bindings)
@@ -763,13 +769,13 @@ Windows. Choose a different chord and retry.",
     }
 
     if matches!(prefix_key, KeyCode::Char(_))
-        && !crate::key_hint::has_ctrl_or_alt(prefix_modifiers)
+        && crate::key_hint::is_plain_text_key_event(KeyEvent::new(prefix_key, prefix_modifiers))
         && !binding.action.context.allows_plain_chord_prefix()
         && binding.action.context != KeymapContext::Agents
     {
         return Err(format!(
             "Invalid `{path}` = `{}`: a chord prefix outside Vim or the command center must use ctrl, \
-alt, or a non-character key so ordinary text input is not intercepted.",
+alt, super, or a non-character key so ordinary text input is not intercepted.",
             binding.spec
         ));
     }

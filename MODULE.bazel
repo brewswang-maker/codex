@@ -175,12 +175,29 @@ single_version_override(
     version = "0.15.1",
 )
 
-bazel_dep(name = "rules_python", version = "1.7.0")
+bazel_dep(name = "rules_python", version = "2.4.2")
 
 voice_python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 voice_python.defaults(python_version = "3.11")
 voice_python.toolchain(python_version = "3.12")
 use_repo(voice_python, "python_3_12")
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.parse(
+    download_only = True,
+    hub_name = "schema_python",
+    python_version = "3.12",
+    target_platforms = [
+        "linux_aarch64",
+        "linux_x86_64",
+        "osx_aarch64",
+        "osx_x86_64",
+        "windows_aarch64",
+        "windows_x86_64",
+    ],
+    uv_lock = "//sdk/python:uv.lock",
+)
+use_repo(pip, "schema_python")
 
 # Use the existing pinned Make build for foreign_cc consumers, including the
 # native voice pkg-config bootstrap, instead of a PATH-provided Make.
@@ -491,24 +508,23 @@ crate.annotation(
     workspace_cargo_toml = "rust/runfiles/Cargo.toml",
 )
 
-# MXC's resource compiler lookup needs an explicit path for Windows GNU targets.
-crate.annotation(
-    build_script_deps = [
-        "@crates//:cc-1.2.55",
-        "@crates//:winresource-0.1.31",
-    ],
-    build_script_env = {
-        "RC_PATH": "$(execpath @llvm//tools:llvm-rc)",
-    },
-    build_script_tools = [
-        "@llvm//tools:clang",
-        "@llvm//tools:llvm-rc",
-    ],
-    crate = "mxc-sdk",
-    patch_args = ["-p1"],
-    patches = ["//patches:mxc-sdk_utf8_resources.patch"],
-    workspace_cargo_toml = "src/Cargo.toml",
-)
+# MXC keeps its Rust workspace below the repository root.
+[
+    crate.annotation(
+        crate = name,
+        workspace_cargo_toml = "src/Cargo.toml",
+    )
+    for name in [
+        "appcontainer_common",
+        "learning_mode_core",
+        "learning_mode_windows",
+        "mxc_config_contract",
+        "mxc_telemetry",
+        "process_security_environment_spec",
+        "sandbox_spec",
+        "wxc_common",
+    ]
+]
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
@@ -517,8 +533,8 @@ codex_release_archive = use_extension(
     "codex_release_archive",
 )
 codex_release_archive.release(
-    sha256 = "8b711520beddf385467b8da4d2c93736637c6ba1e46811cf0d8606b7c490b6f6",
-    version = "0.156.1",
+    sha256 = "a676f5722aae0d86cbe3764332f08eab1fdd89dc0a300b3ad4ffbf48611fa3e3",
+    version = "0.162.1",
 )
 codex_release_archive.release(
     sha256 = "71a28d362c96ac9829bf8203a2c71be451aeb726adb843167fdaf0eae8fe7dd9",
@@ -527,7 +543,7 @@ codex_release_archive.release(
 use_repo(
     codex_release_archive,
     "codex_release_0.145.0_linux_x86_64",
-    "codex_release_0.156.1_linux_x86_64",
+    "codex_release_0.162.1_linux_x86_64",
 )
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")

@@ -209,6 +209,9 @@ pub struct ConversationStartParams {
     pub realtime_end_instructions: Option<String>,
     pub prompt: Option<Option<String>>,
     pub realtime_session_id: Option<String>,
+    /// Client-generated identifier for the product voice session. This is distinct from the
+    /// Realtime API session identifier.
+    pub voice_session_id: Option<String>,
     pub transport: Option<ConversationStartTransport>,
     /// Overrides the configured realtime protocol version for this session only.
     pub version: Option<RealtimeConversationVersion>,
@@ -976,6 +979,8 @@ impl InterAgentCommunication {
         ResponseInputItem::Message {
             role: "assistant".to_string(),
             content: vec![ContentItem::OutputText {
+                annotations: None,
+                logprobs: None,
                 text: serde_json::to_string(&communication).unwrap_or_default(),
             }],
             phase: Some(MessagePhase::Commentary),
@@ -1023,7 +1028,7 @@ impl InterAgentCommunication {
 
     pub fn from_message_content(content: &[ContentItem]) -> Option<Self> {
         match content {
-            [ContentItem::InputText { text }] | [ContentItem::OutputText { text }] => {
+            [ContentItem::InputText { text }] | [ContentItem::OutputText { text, .. }] => {
                 serde_json::from_str(text).ok()
             }
             _ => None,
@@ -3483,6 +3488,19 @@ impl TurnContextItem {
     }
 }
 
+/// Estimate the model-visible content length of an encrypted compaction.
+///
+/// The payload can contain summary text, sampled-token replay caches, and
+/// encryption/base64 overhead. Normalize the roughly threefold payload growth
+/// observed with replay caches before applying the usual four-byte text
+/// heuristic: twelve ciphertext bytes per estimated token, rounded up.
+/// This restores the earlier budgeting scale, not exact tokenizer counts, and
+/// can underestimate legacy checkpoints without caches. Callers must enforce
+/// transport-size limits separately.
+pub fn estimate_compaction_content_length(encoded_len: usize) -> usize {
+    encoded_len.div_ceil(3)
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 #[serde(tag = "mode", content = "limit", rename_all = "snake_case")]
 pub enum TruncationPolicy {
@@ -4837,6 +4855,8 @@ mod tests {
             ResponseInputItem::Message {
                 role: "assistant".to_string(),
                 content: vec![ContentItem::OutputText {
+                    annotations: None,
+                    logprobs: None,
                     text: serde_json::to_string(&serialized_communication)
                         .expect("serialize communication"),
                 }],

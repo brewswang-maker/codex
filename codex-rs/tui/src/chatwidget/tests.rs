@@ -257,8 +257,6 @@ mod history_projection;
 mod history_replay;
 #[path = "tests/home_cleanup_tests.rs"]
 mod home_cleanup_tests;
-#[path = "tests/iterm_session_status.rs"]
-mod iterm_session_status;
 #[path = "tests/luna_reserve_usage_tests.rs"]
 mod luna_reserve_usage_tests;
 mod mcp_startup;
@@ -277,6 +275,8 @@ mod plan_mode;
 #[path = "tests/plugin_catalog_tests.rs"]
 mod plugin_catalog;
 mod popups_and_settings;
+#[path = "tests/program_status.rs"]
+mod program_status;
 #[path = "tests/rate_limit_recovery_tests.rs"]
 mod rate_limit_recovery_tests;
 #[path = "tests/reasoning_status_tests.rs"]
@@ -299,6 +299,8 @@ mod status_command_tests;
 mod status_surface_previews;
 #[path = "tests/subagent_activity_tests.rs"]
 mod subagent_activity;
+#[path = "tests/terminal_program_status.rs"]
+mod terminal_program_status;
 mod terminal_title;
 #[path = "tests/tool_activity_tests.rs"]
 mod tool_activity_tests;
@@ -307,6 +309,7 @@ mod usage;
 mod worktree_picker;
 
 pub(crate) use helpers::make_chatwidget_manual_with_sender;
+pub(crate) use helpers::render_bottom_popup;
 pub(crate) use helpers::set_chatgpt_auth;
 pub(crate) use helpers::set_fast_mode_test_catalog;
 pub(super) use helpers::*;

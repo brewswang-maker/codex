@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -2470,6 +2471,20 @@ async fn blank_and_rejected_rollout_lines_advance_projection() {
         .expect("queue valid retry");
     recorder.flush().await.expect("flush valid retry");
 
+    // Replay this small file, cancelling between records after its single read completes.
+    let checks = Cell::new(0);
+    assert!(
+        super::read_projection_steps_sync(
+            rollout_path.as_path(),
+            /*start_offset*/ 0,
+            /*expected_ordinal*/ 0,
+            thread_id,
+            /*subagent_history_start_ordinal*/ None,
+            || checks.replace(checks.get() + 1) >= 6,
+        )
+        .is_err()
+    );
+
     super::materialize_to_sqlite(&store, thread_id, rollout_path.as_path())
         .await
         .expect("project valid retry after rejected line");
@@ -2875,6 +2890,8 @@ fn turn_completed(turn_id: &str) -> RolloutItem {
 fn user_message(message: &str) -> RolloutItem {
     RolloutItem::ResponseItem(
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {

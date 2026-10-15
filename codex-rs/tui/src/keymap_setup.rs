@@ -325,6 +325,7 @@ pub(crate) fn build_keymap_action_menu_params(
     });
 
     SelectionViewParams {
+        allow_input_when_disconnected: true,
         view_id: Some(KEYMAP_ACTION_MENU_VIEW_ID),
         header: Box::new(Paragraph::new(header).wrap(Wrap { trim: false })),
         footer_note: Some(Line::from(vec![
@@ -392,6 +393,7 @@ pub(crate) fn build_keymap_replace_binding_menu_params(
         .collect();
 
     SelectionViewParams {
+        allow_input_when_disconnected: true,
         view_id: Some(KEYMAP_REPLACE_BINDING_MENU_VIEW_ID),
         header: Box::new(Paragraph::new(header).wrap(Wrap { trim: false })),
         footer_hint: Some(picker_hint_line_for_keymap(&runtime_keymap.list)),
@@ -416,6 +418,7 @@ pub(crate) fn build_keymap_conflict_params(
         KeymapCaptureMode::SingleKey
     };
     SelectionViewParams {
+        allow_input_when_disconnected: true,
         header: Box::new(
             Paragraph::new(vec![
                 Line::from("Shortcut Conflict".bold()),
@@ -665,16 +668,21 @@ fn key_parts_to_config_key_spec(
     let (code, normalized_modifiers) = crate::key_hint::normalize_key_parts(code, modifiers);
     modifiers = normalized_modifiers;
 
-    let supported_modifiers = KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT;
+    let supported_modifiers =
+        KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT | KeyModifiers::SUPER;
     if !modifiers.difference(supported_modifiers).is_empty() {
         return Err(
-            "Only ctrl, alt, and shift modifiers can be stored in `tui.keymap`.".to_string(),
+            "Only ctrl, alt, shift, and super modifiers can be stored in `tui.keymap`.".to_string(),
         );
     }
 
     let key = match code {
         KeyCode::Enter => "enter".to_string(),
         KeyCode::Tab => "tab".to_string(),
+        KeyCode::BackTab => {
+            modifiers.insert(KeyModifiers::SHIFT);
+            "tab".to_string()
+        }
         KeyCode::Backspace => "backspace".to_string(),
         KeyCode::Esc => "esc".to_string(),
         KeyCode::Delete => "delete".to_string(),
@@ -724,6 +732,9 @@ fn format_key_spec(modifiers: KeyModifiers, key: &str) -> String {
     }
     if modifiers.contains(KeyModifiers::SHIFT) {
         parts.push("shift");
+    }
+    if modifiers.contains(KeyModifiers::SUPER) {
+        parts.push("super");
     }
     parts.push(key);
     parts.join("-")
@@ -1276,6 +1287,15 @@ mod tests {
     }
 
     #[test]
+    fn picker_editor_render_snapshot() {
+        let runtime = RuntimeKeymap::defaults();
+        let mut params = build_keymap_picker_params(&runtime, &TuiKeymap::default());
+        params.initial_tab_id = Some("editor-shortcuts".to_string());
+
+        assert_snapshot!("keymap_picker_editor", render_picker(params, /*width*/ 120));
+    }
+
+    #[test]
     fn picker_custom_render_snapshot() {
         let keymap =
             keymap_with_replacement(&TuiKeymap::default(), "composer", "submit", "ctrl-enter")
@@ -1751,12 +1771,12 @@ mod tests {
     fn key_capture_serializes_modifier_order_for_config() {
         let event = KeyEvent::new(
             KeyCode::Char('K'),
-            KeyModifiers::CONTROL | KeyModifiers::ALT,
+            KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
         );
 
         assert_eq!(
             key_event_to_config_key_spec(event),
-            Ok("ctrl-alt-shift-k".to_string())
+            Ok("ctrl-alt-shift-super-k".to_string())
         );
     }
 
@@ -1765,6 +1785,14 @@ mod tests {
         assert_eq!(
             key_event_to_config_key_spec(KeyEvent::new(KeyCode::PageDown, KeyModifiers::SHIFT)),
             Ok("shift-page-down".to_string())
+        );
+        assert_eq!(
+            key_event_to_config_key_spec(KeyEvent::from(KeyCode::BackTab)),
+            Ok("shift-tab".to_string())
+        );
+        assert_eq!(
+            key_event_to_config_key_spec(KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT)),
+            Ok("shift-tab".to_string())
         );
     }
 
@@ -1940,6 +1968,25 @@ mod tests {
                 KeybindingSpec("ctrl-shift-b".to_string())
             ]))
         );
+    }
+
+    #[test]
+    fn add_alternate_preserves_super_default_binding() {
+        let runtime = RuntimeKeymap::defaults();
+        let outcome = keymap_with_edit(
+            &TuiKeymap::default(),
+            &runtime,
+            "editor",
+            "move_line_start",
+            "f12",
+            &KeymapEditIntent::AddAlternate,
+        )
+        .expect("add alternate");
+
+        let KeymapEditOutcome::Updated { bindings, .. } = outcome else {
+            panic!("expected updated keymap");
+        };
+        assert_eq!(bindings, vec!["home", "ctrl-a", "super-left", "f12"]);
     }
 
     #[test]

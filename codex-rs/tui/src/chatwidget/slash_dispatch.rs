@@ -585,6 +585,9 @@ impl ChatWidget {
             SlashCommand::Statusline => {
                 self.open_status_line_setup();
             }
+            SlashCommand::Config => {
+                self.open_config_panel();
+            }
             SlashCommand::Theme => {
                 self.open_theme_picker();
             }
@@ -1244,8 +1247,7 @@ impl ChatWidget {
             service_tier_commands_enabled: !self.current_model_service_tier_commands().is_empty(),
             daybreak_command_description: self.daybreak_command_description(),
             voice_command_enabled: self.realtime_conversation_available_for_thread,
-            worktrees_enabled: self.config.features.enabled(Feature::Worktrees)
-                && self.local_worktree_operations,
+            worktrees_enabled: self.local_worktree_operations,
             allow_elevate_sandbox,
             side_conversation_active: self.active_side_conversation,
         }
@@ -1333,6 +1335,7 @@ impl ChatWidget {
             | SlashCommand::Hooks
             | SlashCommand::Title
             | SlashCommand::Statusline
+            | SlashCommand::Config
             | SlashCommand::Theme
             | SlashCommand::Tui
             | SlashCommand::Pets => QueueDrain::Stop,
